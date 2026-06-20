@@ -1,0 +1,238 @@
+---
+title: "Student Retention Predictive Modeling | Kevin Cauley"
+
+output:
+  html_document:
+    always_allow_html: true
+    self_contained: false
+    toc: false
+    theme: null
+    highlight: null
+    fig_caption: true
+    css: assets/styles.css
+    includes:
+      in_header: assets/header.html
+
+number_sections: false
+---
+
+```{r setup, include=FALSE}
+library(here)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (file.exists(here::here("analysis", "helper.R"))) {
+  source(here::here("analysis", "helper.R"))
+}
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "100%",
+  fig.retina = 2,
+  fig.width = 8,
+  fig.height = 5,
+  dpi = 300,
+  cache = FALSE,
+  dev = "png"
+)
+```
+
+```{=html}
+<div class="main-container">
+  <div class="index-container">
+
+    <div class="student-hero">
+
+      <div class="student-hero-content">
+
+        <p class="hero-meta">
+          Kevin Allen Cauley • `r format(Sys.Date(), '%B %d, %Y')`
+        </p>
+
+        <h1 class="student-hero-title">Student Retention Predictive Modeling</h1>
+
+        <p class="student-hero-subtitle">
+          A portfolio-style analytics report using student academic, attendance, financial, engagement, and support-service data to predict final course performance and identify students who may benefit from targeted retention support.
+        </p>
+
+        <div class="hero-chip-row">
+          <span class="hero-chip">Higher Education Analytics</span>
+          <span class="hero-chip">Final Grade Prediction</span>
+          <span class="hero-chip">Academic Risk Identification</span>
+        </div>
+
+      </div>
+
+      <div class="student-hero-panel">
+
+        <div class="hero-stat-card">
+          <span class="hero-stat-label">Primary Outcome</span>
+          <span class="hero-stat-value">Final Grade</span>
+        </div>
+
+        <div class="hero-stat-card">
+          <span class="hero-stat-label">Decision Focus</span>
+          <span class="hero-stat-value">Student Support</span>
+        </div>
+
+        <div class="hero-stat-card">
+          <span class="hero-stat-label">Portfolio Frame</span>
+          <span class="hero-stat-value">Academic Risk</span>
+        </div>
+
+      </div>
+
+    </div>
+
+    <hr class="section-divider">
+
+    <h2>🔍 Project Overview</h2>
+
+    <div class="section-intro">
+      This project analyzes undergraduate student data from Advance University to better understand the factors associated with academic performance and student retention risk. The primary modeling outcome is final course grade, with enrollment status treated as a predictor rather than the outcome. This structure supports an early-warning analytics framework: instead of waiting until a student stops out, the model identifies academic risk patterns that can inform proactive advising, tutoring, financial support, attendance follow-up, and student engagement interventions.
+    </div>
+
+    <div class="takeaway-box">
+      <b>Core Focus:</b> Final Grade Prediction • Academic Risk Identification • Student Support Strategy • Retention-Focused Intervention Planning
+    </div>
+
+    <hr class="section-divider">
+
+    <h2>🧭 Project Report Pathway</h2>
+
+    <div class="section-intro section-spacing">
+      This project is organized as a portfolio report while still following the logic of the original technical submission: understand the dataset, prepare the variables, build predictive models, compare results, and translate the findings into student-success recommendations.
+    </div>
+
+    <div class="report-pathway">
+
+      <a href="student_retention_eda.html" class="pathway-row">
+        <div class="pathway-number">01</div>
+        <div class="pathway-content">
+          <h4>Exploratory Data Analysis</h4>
+          <p>
+            Review the dataset, variable roles, research questions, missing values, outliers, preprocessing decisions, feature engineering, and early patterns tied to final grade performance.
+          </p>
+        </div>
+        <div class="pathway-action">Open EDA →</div>
+      </a>
+
+      <a href="student_retention_modeling.html" class="pathway-row">
+        <div class="pathway-number">02</div>
+        <div class="pathway-content">
+          <h4>Predictive Modeling Strategy</h4>
+          <p>
+            Build the modeling workflow, including target selection, train/test split, centering and scaling, one-hot encoding, baseline comparison, and multiple model families.
+          </p>
+        </div>
+        <div class="pathway-action">Open Modeling →</div>
+      </a>
+
+      <a href="student_retention_results.html" class="pathway-row">
+        <div class="pathway-number">03</div>
+        <div class="pathway-content">
+          <h4>Model Results & Comparison</h4>
+          <p>
+            Compare cross-validation results, holdout performance, model hyperparameters, RMSE, R-squared, MAE, variable importance, and model ranking.
+          </p>
+        </div>
+        <div class="pathway-action">Open Results →</div>
+      </a>
+
+      <a href="student_retention_insights.html" class="pathway-row">
+        <div class="pathway-number">04</div>
+        <div class="pathway-content">
+          <h4>Insights & Recommendations</h4>
+          <p>
+            Translate model findings into practical guidance for advising, tutoring, financial support, attendance follow-up, and proactive student-success intervention.
+          </p>
+        </div>
+        <div class="pathway-action">Open Insights →</div>
+      </a>
+
+    </div>
+
+    <hr class="section-divider">
+
+    <h2>📌 Project Snapshot</h2>
+
+    <div class="snapshot-strip">
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Industry</span>
+        <span class="snapshot-value">Higher Education</span>
+      </div>
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Primary Outcome</span>
+        <span class="snapshot-value">Final Grade</span>
+      </div>
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Decision Frame</span>
+        <span class="snapshot-value">Academic Risk</span>
+      </div>
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Use Case</span>
+        <span class="snapshot-value">Student Support</span>
+      </div>
+
+    </div>
+
+    <hr class="section-divider">
+
+    <h2>🧠 Key Capabilities Demonstrated</h2>
+
+    <div class="capability-list">
+
+      <div class="capability-row">
+        <div class="capability-icon">01</div>
+        <div>
+          <h4>Data Preparation & Feature Engineering</h4>
+          <p>
+            Cleaned and structured student-level data, converted variables into modeling-ready formats, documented variable roles, engineered academic risk indicators, and prepared reproducible datasets for exploratory analysis and predictive modeling.
+          </p>
+        </div>
+      </div>
+
+      <div class="capability-row">
+        <div class="capability-icon">02</div>
+        <div>
+          <h4>Predictive Modeling & Model Comparison</h4>
+          <p>
+            Built and evaluated multiple modeling approaches, including linear regression, LASSO, GAM, random forest, gradient boosted trees, support vector machines, and neural network modeling.
+          </p>
+        </div>
+      </div>
+
+      <div class="capability-row">
+        <div class="capability-icon">03</div>
+        <div>
+          <h4>Executive-Level Analytics Storytelling</h4>
+          <p>
+            Translated technical model results into clear visual summaries, model-selection logic, academic-risk segments, and practical recommendations for institutional decision-makers.
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+    <hr class="section-divider">
+
+    <h2>🚀 Why This Project Matters</h2>
+
+    <div class="section-intro">
+      Student retention is not only an enrollment outcome; it is also an early-warning challenge. Academic performance, attendance, financial pressure, engagement, and use of support services can all provide signals that a student may need help before they disengage. This project demonstrates how predictive analytics can support proactive, evidence-based student success strategies.
+    </div>
+
+    <div class="takeaway-box">
+      <b>Outcome:</b> A practical, end-to-end analytics framework for predicting student academic performance, identifying risk patterns, and recommending targeted retention-support actions.
+    </div>
+
+  </div>
+</div>
+```

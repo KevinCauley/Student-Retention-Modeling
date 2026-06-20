@@ -1,0 +1,827 @@
+---
+title: "Student Retention Modeling | Kevin Cauley"
+
+output:
+  html_document:
+    always_allow_html: true
+    self_contained: false
+    toc: false
+    theme: null
+    highlight: null
+    fig_caption: true
+    css: assets/styles.css
+    includes:
+      in_header: assets/header.html
+
+number_sections: false
+---
+
+```{r setup, include=FALSE}
+library(here)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+if (file.exists(here::here("analysis", "helper.R"))) {
+  source(here::here("analysis", "helper.R"))
+}
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "100%",
+  fig.retina = 2,
+  fig.width = 8,
+  fig.height = 5,
+  dpi = 300,
+  cache = FALSE,
+  dev = "png"
+)
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(caret)
+library(glmnet)
+library(mgcv)
+library(ranger)
+library(gbm)
+library(kernlab)
+library(nnet)
+library(caret)
+```
+
+```{r load-or-create-clean-data}
+set.seed(5300)
+
+clean_path <- here::here("data", "processed", "student_retention_cleaned.rds")
+
+if (file.exists(clean_path)) {
+  student_clean <- readRDS(clean_path)
+} else {
+
+  data_path <- dplyr::case_when(
+    file.exists(here::here("data", "raw", "collegeret.xlsx")) ~ here::here("data", "raw", "collegeret.xlsx"),
+    file.exists(here::here("data", "raw", "COLLEGE_RET_SV.xlsx")) ~ here::here("data", "raw", "COLLEGE_RET_SV.xlsx"),
+    file.exists(here::here("collegeret.xlsx")) ~ here::here("collegeret.xlsx"),
+    file.exists(here::here("COLLEGE_RET_SV.xlsx")) ~ here::here("COLLEGE_RET_SV.xlsx"),
+    TRUE ~ NA_character_
+  )
+
+  if (is.na(data_path)) {
+    stop("Could not find the student retention workbook. Place collegeret.xlsx in data/raw/ or render the EDA page first.")
+  }
+
+  student_raw <- read_excel(data_path, sheet = "DB")
+
+  student_clean <- student_raw %>%
+    rename(
+      StudentID = ID,
+      Semester = SEMESTER,
+      Major = MAJOR,
+      EnrollmentStatus = ESTATUS,
+      Gender = GENDER,
+      Origin = ORIGIN,
+      FirstPartGrade = FIRSTPART_GRADE,
+      SecondPartGrade = SECONDPARTIAL_GRADE,
+      FinalExamGrade = FINALEXAM_GRADE,
+      FinalGrade = FINAL_GRADE,
+      AbsencesFirstPart = ABSENCES_FIRSTPARTIAL,
+      AbsencesSecondPart = ABSENCES_SECONDPARTIAL,
+      AbsencesThirdPart = ABSENCES_THIRDDPARTIAL,
+      NumOnlineCourses = NUMCOURSES_ONLINE,
+      ScholarshipPercent = SCHOLARSHIP_PERCENT,
+      PastDueBalance = PASTDUE_BALANCE,
+      NumAdvisorySessions = NUMBSESSIONS_ADVISORY,
+      NumCounselingSessions = NUMBSESSIONS_COUNSELING,
+      NumMathTutoringSessions = TUTORINGMATH_SESSIONS,
+      NumFormativePlanSessions = FORMATIVEPLAN_Q5,
+      TeacherEvalQ1 = TEACHEREVAL_Q1,
+      TeacherEvalQ2 = TEACHEREVAL_Q2,
+      TeacherEvalQ3 = TEACHEREVAL_Q3,
+      TeacherEvalQ4 = TEACHEREVAL_Q4,
+      TeacherEvalQ5 = TEACHEREVAL_Q5,
+      TeacherEvalQ6 = TEACHEREVAL_Q6,
+      TeacherEvalQ7 = TEACHEREVAL_Q7,
+      TeacherEvalQ8 = TEACHEREVAL_Q8,
+      TeacherEvalQ9 = TEACHEREVAL_Q9,
+      TeacherEvalQ10 = TEACHEREVAL_Q10,
+      TeacherEvalQ11 = TEACHEREVAL_Q11,
+      TeacherEvalQ12 = TEACHEREVAL_Q12,
+      TeacherEvalQ13 = TEACHEREVAL_Q13,
+      TeacherEvalQ14 = TEACHEREVAL_Q14,
+      TeacherEvalQ15 = TEACHEREVAL_Q15,
+      TeacherEvalQ16 = TEACHEREVAL_Q16,
+      HonorFaults = HONOR_FAULTS
+    ) %>%
+    mutate(
+      across(c(Semester, Major, EnrollmentStatus, Gender, Origin), ~ str_squish(as.character(.x))),
+      across(c(Semester, Major, EnrollmentStatus, Gender, Origin), ~ str_to_title(.x)),
+      across(c(Semester, Major, EnrollmentStatus, Gender, Origin), as.factor),
+      AverageAbsences = rowMeans(
+        across(c(AbsencesFirstPart, AbsencesSecondPart, AbsencesThirdPart)),
+        na.rm = TRUE
+      ),
+      CumulativeTeacherEval = rowMeans(
+        across(starts_with("TeacherEvalQ")),
+        na.rm = TRUE
+      ),
+      AcademicRisk = if_else(FinalGrade < 70, "At Risk", "Not At Risk"),
+      AcademicRisk = factor(AcademicRisk, levels = c("Not At Risk", "At Risk"))
+    )
+
+  if (!dir.exists(here::here("data", "processed"))) {
+    dir.create(here::here("data", "processed"), recursive = TRUE)
+  }
+
+  saveRDS(student_clean, clean_path)
+}
+```
+
+```{r modeling-data-prep}
+# The full model uses final exam grade because the original technical project
+# modeled final course performance after all academic components were available.
+# The early-warning version excludes final exam grade because it would not be available
+# early enough to support proactive intervention.
+
+full_predictors <- c(
+  "Semester",
+  "Major",
+  "EnrollmentStatus",
+  "Gender",
+  "Origin",
+  "FirstPartGrade",
+  "SecondPartGrade",
+  "FinalExamGrade",
+  "AverageAbsences",
+  "NumOnlineCourses",
+  "ScholarshipPercent",
+  "PastDueBalance",
+  "NumAdvisorySessions",
+  "NumCounselingSessions",
+  "NumMathTutoringSessions",
+  "NumFormativePlanSessions",
+  "CumulativeTeacherEval",
+  "HonorFaults"
+)
+
+early_warning_predictors <- setdiff(full_predictors, "FinalExamGrade")
+
+modeling_df <- student_clean %>%
+  select(FinalGrade, all_of(full_predictors)) %>%
+  tidyr::drop_na()
+
+early_warning_df <- student_clean %>%
+  select(FinalGrade, all_of(early_warning_predictors)) %>%
+  tidyr::drop_na()
+
+set.seed(5300)
+
+train_index <- createDataPartition(
+  modeling_df$FinalGrade,
+  p = 0.80,
+  list = FALSE
+)
+
+train_df <- modeling_df[train_index, ]
+test_df  <- modeling_df[-train_index, ]
+
+early_train_df <- early_warning_df[train_index, ]
+early_test_df  <- early_warning_df[-train_index, ]
+
+model_formula <- as.formula(
+  paste("FinalGrade ~", paste(full_predictors, collapse = " + "))
+)
+
+early_model_formula <- as.formula(
+  paste("FinalGrade ~", paste(early_warning_predictors, collapse = " + "))
+)
+
+cv_control <- trainControl(
+  method = "cv",
+  number = 5,
+  savePredictions = "final",
+  allowParallel = TRUE
+)
+
+metric_selected <- "RMSE"
+```
+
+```{r helper-functions}
+regression_metrics <- function(actual, predicted) {
+  tibble::tibble(
+    RMSE = caret::RMSE(predicted, actual),
+    Rsquared = caret::R2(predicted, actual),
+    MAE = caret::MAE(predicted, actual)
+  )
+}
+
+extract_best_tune <- function(model_object) {
+  if (!is.null(model_object$bestTune)) {
+    paste(names(model_object$bestTune), model_object$bestTune[1, ], sep = " = ", collapse = "; ")
+  } else {
+    "No tuned hyperparameters"
+  }
+}
+```
+
+```{=html}
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • `r format(Sys.Date(), '%B %d, %Y')`
+    </p>
+    
+    <h1 class="hero-title">Predictive Modeling Strategy</h1>
+
+    <p class="hero-subtitle">
+      Building a reproducible model-development workflow for predicting final course performance and translating academic risk into practical student-success insight.
+    </p>
+
+  </div>
+
+  <hr class="section-divider">
+
+  <h2>🔍 Page Overview</h2>
+
+  <div class="section-intro">
+    This page organizes the model-building portion of the student retention project. The focus is not only to train predictive models, but also to document the modeling decisions required by the technical report: target variable selection, train/test splitting, preprocessing, centering and scaling, one-hot encoding, parametric models, non-parametric models, deep learning architecture, PCA discussion, and cluster analysis discussion.
+  </div>
+
+  <div class="takeaway-box">
+    <b>School Requirements Covered:</b> Target Variable • Train/Test Split • Centering & Scaling • One-Hot Encoding • MLR • LASSO • GAM • Random Forest • GBM • SVM • Deep Learning • PCA • Cluster Analysis
+  </div>
+```
+
+## 1. Modeling Goal
+
+The primary modeling goal is to predict **FinalGrade**, a numeric measure of student academic performance. This is the technical outcome used for the regression modeling workflow. In the broader retention context, predicted final grade can be translated into academic-risk segments that support proactive advising, tutoring, financial aid review, attendance follow-up, and engagement interventions.
+
+Enrollment status is retained as a predictor and context variable rather than modeled as the outcome. This keeps the modeling task focused on academic performance while still connecting the results to student retention and student-success decision-making.
+
+```{r modeling-goal-table}
+modeling_goal <- tibble::tribble(
+  ~Modeling_Decision, ~Choice, ~Reason,
+  "Primary outcome", "FinalGrade", "Final course performance is a direct numeric outcome suitable for regression modeling.",
+  "Primary task type", "Regression", "The outcome is numeric and can be evaluated using RMSE, R-squared, and MAE.",
+  "Retention context", "AcademicRisk derived from FinalGrade", "The prediction can be converted into a practical intervention segment.",
+  "Enrollment status", "Predictor", "EnrollmentStatus provides student context but is not treated as the outcome.",
+  "Main comparison metric", "RMSE", "RMSE penalizes larger prediction errors and is useful when large grade prediction errors matter.",
+  "Business-friendly metric", "MAE", "MAE is easy to explain as the average number of grade points the model misses by."
+)
+
+kable(modeling_goal, align = "lll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+<div class="model-highlight-card">
+  <div class="model-badge">MODELING FOCUS</div>
+  <h3 class="model-title">Predict final course performance, then translate risk into action.</h3>
+  <p class="model-subtitle">
+    The model is designed to estimate final academic performance. The retention value comes from using those predictions to identify students who may benefit from support before risk turns into disengagement or stop-out behavior.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Outcome</span>
+      <span class="metric-value">FinalGrade</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Task</span>
+      <span class="metric-value">Regression</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Decision Use</span>
+      <span class="metric-value">Academic-risk support</span>
+    </div>
+  </div>
+</div>
+```
+
+## 2. Feature Selection
+
+The predictors are selected from the cleaned EDA dataset based on academic relevance, decision value, and the original project requirements. The model includes academic performance, attendance, financial, enrollment, student-support, engagement, and conduct indicators.
+
+Two modeling frames are documented:
+
+1. **Full performance model:** includes `FinalExamGrade`.
+2. **Early-warning model:** excludes `FinalExamGrade` because a final exam score would usually arrive too late for early intervention.
+
+```{r feature-selection-table}
+feature_selection <- tibble::tribble(
+  ~Feature_Group, ~Variables, ~Modeling_Rationale,
+  "Academic context", "Semester, Major, EnrollmentStatus", "Provides course and enrollment context for performance patterns.",
+  "Student characteristics", "Gender, Origin", "Included as context variables; interpretation should remain careful and non-punitive.",
+  "Academic progress", "FirstPartGrade, SecondPartGrade, FinalExamGrade", "Course performance components are likely direct predictors of final grade.",
+  "Attendance", "AverageAbsences", "Attendance is an intuitive early-warning signal.",
+  "Online learning", "NumOnlineCourses", "Online course load may relate to student experience and academic support needs.",
+  "Financial indicators", "ScholarshipPercent, PastDueBalance", "Financial support and financial pressure can influence student persistence and performance.",
+  "Support services", "Advisory, counseling, tutoring, formative plan sessions", "These variables connect prediction to actionable intervention strategies.",
+  "Engagement/course experience", "CumulativeTeacherEval", "Summarizes teacher evaluation items into a single engagement-related signal.",
+  "Conduct", "HonorFaults", "Conduct-related issues may provide additional academic-risk context."
+)
+
+kable(feature_selection, align = "lll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 3. Data Split and Reproducibility
+
+The data is split into an 80% training set and a 20% testing set. The training set is used for model fitting and cross-validation. The testing set is held out until final evaluation to estimate how well each model generalizes to unseen student records.
+
+The same random seed is used throughout the modeling workflow so that results can be reproduced.
+
+```{r split-summary-table}
+split_summary <- tibble::tibble(
+  Dataset = c("Full modeling dataset", "Training set", "Testing set"),
+  Records = c(nrow(modeling_df), nrow(train_df), nrow(test_df)),
+  Percent = c(1, nrow(train_df) / nrow(modeling_df), nrow(test_df) / nrow(modeling_df))
+) %>%
+  mutate(
+    Records = comma(Records),
+    Percent = percent(Percent, accuracy = 0.1)
+  )
+
+kable(split_summary, align = "lcc") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 4. Preprocessing for Modeling
+
+The EDA page kept variables in their original units for interpretability. Modeling requires additional preprocessing because some algorithms are sensitive to scale and because categorical variables must be represented numerically.
+
+The modeling workflow uses:
+
+- **One-hot encoding** for categorical predictors.
+- **Centering and scaling** for algorithms that rely on distance, coefficients, or gradient optimization.
+- **Cross-validation** to tune hyperparameters and estimate training performance.
+- **A fixed seed** to make the workflow reproducible.
+
+```{r preprocessing-modeling-table}
+preprocessing_modeling <- tibble::tribble(
+  ~Preprocessing_Step, ~Applied_To, ~Reason,
+  "One-hot encoding", "Categorical predictors", "Many machine learning algorithms require numeric input.",
+  "Centering", "Numeric predictors for selected models", "Centers variables around zero for algorithms sensitive to scale.",
+  "Scaling", "Numeric predictors for selected models", "Places predictors on comparable scales.",
+  "No automatic outlier deletion", "All models", "Extreme values may represent meaningful student-risk conditions.",
+  "Complete-case modeling dataset", "Modeling workflow", "Keeps model comparison consistent across techniques.",
+  "Five-fold cross-validation", "Training set", "Tunes hyperparameters and estimates model performance on training data.",
+  "Holdout testing set", "Final evaluation", "Estimates generalization performance on unseen records."
+)
+
+kable(preprocessing_modeling, align = "lll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r one-hot-encoding-preview}
+dummy_encoder <- dummyVars(model_formula, data = train_df, fullRank = TRUE)
+
+train_encoded <- predict(dummy_encoder, newdata = train_df) %>%
+  as.data.frame()
+
+test_encoded <- predict(dummy_encoder, newdata = test_df) %>%
+  as.data.frame()
+
+encoding_summary <- tibble::tibble(
+  Item = c(
+    "Original predictor count",
+    "Encoded predictor count",
+    "Training rows",
+    "Testing rows"
+  ),
+  Value = c(
+    length(full_predictors),
+    ncol(train_encoded),
+    nrow(train_encoded),
+    nrow(test_encoded)
+  )
+)
+
+kable(encoding_summary, align = "lc") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 5. Baseline Model
+
+The baseline model predicts the mean final grade from the training set for every student in the testing set. This creates a simple reference point. More advanced models should outperform this baseline to justify their added complexity.
+
+```{r baseline-model}
+baseline_mean <- mean(train_df$FinalGrade, na.rm = TRUE)
+
+baseline_train_predictions <- rep(baseline_mean, nrow(train_df))
+baseline_test_predictions <- rep(baseline_mean, nrow(test_df))
+
+baseline_train_metrics <- regression_metrics(train_df$FinalGrade, baseline_train_predictions) %>%
+  mutate(Model = "Baseline Mean", Data = "Training")
+
+baseline_test_metrics <- regression_metrics(test_df$FinalGrade, baseline_test_predictions) %>%
+  mutate(Model = "Baseline Mean", Data = "Testing")
+
+baseline_metrics <- bind_rows(baseline_train_metrics, baseline_test_metrics) %>%
+  select(Model, Data, RMSE, Rsquared, MAE)
+
+kable(
+  baseline_metrics %>%
+    mutate(across(c(RMSE, Rsquared, MAE), ~ round(.x, 3))),
+  align = "llrrr"
+) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+<div class="takeaway-box">
+  <b>Baseline Interpretation:</b> The baseline model is intentionally simple. It does not use student characteristics, grades, attendance, financial variables, or support-service usage. Its purpose is to show whether the predictive models add real value beyond simply predicting the average final grade.
+</div>
+
+```{=html}
+<hr class="section-divider">
+<h2>🧪 Model Development</h2>
+
+<div class="section-intro">
+  The following section trains the primary model families used in the original project: parametric models, flexible regression models, tree-based ensemble models, support vector machines, and a single-hidden-layer neural network. The goal is to compare model families while keeping the workflow reproducible and organized.
+</div>
+```
+
+## 6. Parametric Model 1: Multiple Linear Regression
+
+Multiple linear regression is used as the first interpretable modeling approach. It assumes a mostly linear relationship between predictors and final grade. This makes it useful as a starting point and as a good-enough-fast model when interpretability matters.
+
+```{r train-mlr}
+set.seed(5300)
+
+mlr_model <- train(
+  model_formula,
+  data = train_df,
+  method = "lm",
+  trControl = cv_control,
+  metric = metric_selected
+)
+
+mlr_model
+```
+
+## 7. Parametric Model 2: LASSO Regression
+
+LASSO regression adds regularization to the linear model. It can shrink less useful predictors toward zero, which helps with feature selection and overfitting control.
+
+```{r train-lasso}
+set.seed(5300)
+
+lasso_grid <- expand.grid(
+  alpha = 1,
+  lambda = 10^seq(-4, 1, length = 20)
+)
+
+lasso_model <- train(
+  model_formula,
+  data = train_df,
+  method = "glmnet",
+  preProcess = c("center", "scale"),
+  tuneGrid = lasso_grid,
+  trControl = cv_control,
+  metric = metric_selected
+)
+
+lasso_model
+```
+
+## 8. Flexible Regression Model: Generalized Additive Model
+
+The GAM is included because the EDA plots showed that some relationships may not be strictly linear. A GAM can model smoother nonlinear patterns while remaining more interpretable than some black-box machine learning models.
+
+```{r train-gam}
+set.seed(5300)
+
+gam_model <- train(
+  model_formula,
+  data = train_df,
+  method = "gamSpline",
+  preProcess = c("center", "scale"),
+  trControl = cv_control,
+  metric = metric_selected
+)
+
+gam_model
+```
+
+## 9. Tree-Based Ensemble Model: Random Forest
+
+Random forest is used because it can capture nonlinear patterns and interactions without requiring the same linearity assumptions as multiple linear regression. It is often a strong candidate when predictor relationships are complex.
+
+```{r train-random-forest}
+set.seed(5300)
+
+rf_grid <- expand.grid(
+  mtry = c(4, 8, 12),
+  splitrule = "variance",
+  min.node.size = c(5, 10)
+)
+
+rf_model <- train(
+  model_formula,
+  data = train_df,
+  method = "ranger",
+  tuneGrid = rf_grid,
+  trControl = cv_control,
+  metric = metric_selected,
+  importance = "permutation",
+  num.trees = 300
+)
+
+rf_model
+```
+
+## 10. Tree-Based Ensemble Model: Gradient Boosted Trees
+
+Gradient boosted trees are included because they build many small trees sequentially, with each tree learning from the errors of the prior trees. This can produce strong predictive performance, but it may also increase the risk of overfitting if tuning is not handled carefully.
+
+```{r train-gbm}
+set.seed(5300)
+
+gbm_grid <- expand.grid(
+  interaction.depth = c(1, 3),
+  n.trees = c(100, 200),
+  shrinkage = c(0.05, 0.10),
+  n.minobsinnode = c(10)
+)
+
+gbm_model <- train(
+  model_formula,
+  data = train_df,
+  method = "gbm",
+  tuneGrid = gbm_grid,
+  trControl = cv_control,
+  metric = metric_selected,
+  verbose = FALSE
+)
+
+gbm_model
+```
+
+## 11. Support Vector Machine
+
+The support vector machine model uses a radial basis function kernel. The radial kernel is a practical choice when EDA suggests that relationships may be nonlinear and when the model needs flexibility beyond a straight-line decision surface.
+
+```{r train-svm}
+set.seed(5300)
+
+svm_grid <- expand.grid(
+  sigma = c(0.005, 0.01, 0.02),
+  C = c(0.5, 1, 2)
+)
+
+svm_model <- train(
+  model_formula,
+  data = train_df,
+  method = "svmRadial",
+  preProcess = c("center", "scale"),
+  tuneGrid = svm_grid,
+  trControl = cv_control,
+  metric = metric_selected
+)
+
+svm_model
+```
+
+## 12. Single-Hidden-Layer Neural Network
+
+The final technical report required a deep learning-style model with one hidden layer. In this portfolio version, I use a lightweight single-hidden-layer neural network to keep the report reproducible in a standard R environment.
+
+The required architecture is documented as:
+
+- Input nodes: number of encoded predictors
+- Hidden layer nodes: 2 × number of input nodes
+- Hidden activation: ReLU in the technical specification
+- Output: numeric final grade prediction
+
+Because the standard R `nnet` package does not use ReLU activation in the same way as modern deep learning frameworks, this page uses `nnet` as a reproducible approximation and documents the architecture decision. A production version could implement the exact ReLU architecture with Keras or Torch.
+
+```{r train-neural-network}
+set.seed(5300)
+
+encoded_predictor_count <- ncol(train_encoded)
+hidden_nodes <- min(2 * encoded_predictor_count, 25)
+
+nnet_grid <- expand.grid(
+  size = c(5, 10, hidden_nodes),
+  decay = c(0.001, 0.01)
+)
+
+nnet_model <- train(
+  model_formula,
+  data = train_df,
+  method = "nnet",
+  preProcess = c("center", "scale"),
+  tuneGrid = nnet_grid,
+  trControl = cv_control,
+  metric = metric_selected,
+  linout = TRUE,
+  trace = FALSE,
+  maxit = 500
+)
+
+nnet_model
+```
+
+```{r architecture-table}
+architecture_table <- tibble::tibble(
+  Component = c(
+    "Input layer",
+    "Hidden layer",
+    "Hidden nodes",
+    "Activation function",
+    "Output layer",
+    "Output type",
+    "Portfolio implementation note"
+  ),
+  Specification = c(
+    paste(encoded_predictor_count, "encoded predictors"),
+    "One hidden layer",
+    paste("2 × input nodes requested; capped at", hidden_nodes, "for reproducible rendering"),
+    "ReLU requested in original project specification",
+    "One output node",
+    "Numeric FinalGrade prediction",
+    "Used nnet as a lightweight reproducible approximation; Keras/Torch could be used for exact ReLU implementation"
+  )
+)
+
+kable(architecture_table, align = "ll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+<hr class="section-divider">
+<h2>🧩 Dimensionality and Segmentation Discussion</h2>
+```
+
+## 13. PCA Discussion
+
+Principal Component Analysis could make sense if the main goal were to reduce redundancy among correlated predictors, especially the grade components and teacher evaluation items. In this dataset, there are multiple academic performance variables and many teacher evaluation questions. Combining related variables into components could reduce dimensionality and improve stability for some models.
+
+For this portfolio report, I use a simpler engineered feature, **CumulativeTeacherEval**, to summarize the 16 teacher evaluation items. This keeps the model easier to explain. I would consider PCA more strongly if the project were focused on maximizing prediction accuracy with less concern for interpretability.
+
+```{r pca-discussion-table}
+pca_discussion <- tibble::tribble(
+  ~Question, ~Answer,
+  "Does PCA make sense for this dataset?", "Yes, potentially. The teacher evaluation items and grade-related variables may contain correlated information.",
+  "Why not use PCA as the primary approach here?", "The portfolio goal is interpretability. Advisors and decision-makers can understand AverageAbsences and CumulativeTeacherEval more easily than abstract principal components.",
+  "How could PCA be used later?", "Principal components could be created from correlated academic and engagement predictors, then used as inputs to regression or machine learning models.",
+  "Main tradeoff", "PCA may reduce redundancy, but it can make the model harder to explain to non-technical stakeholders."
+)
+
+kable(pca_discussion, align = "ll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 14. Cluster Analysis Discussion
+
+Cluster analysis could also make sense for this dataset if the goal were to identify student profiles before supervised modeling. For example, students might cluster into groups such as high-performing/high-engagement, low-attendance/high-risk, financially pressured, or high-support-service usage. Those cluster labels could then be used as additional predictors in the supervised models.
+
+For this project, I keep the main workflow supervised and focused on predicting **FinalGrade**. However, cluster analysis would be a strong future enhancement for intervention design because different risk groups may require different types of support.
+
+```{r cluster-discussion-table}
+cluster_discussion <- tibble::tribble(
+  ~Question, ~Answer,
+  "Does cluster analysis make sense for this dataset?", "Yes. Student records include academic, attendance, financial, support-service, and engagement variables that could reveal meaningful student profiles.",
+  "How could clusters be used?", "Cluster labels could be added as predictors to supervised models or used to design different intervention strategies.",
+  "Why not make clustering the primary method?", "The project requirement centers on supervised prediction of an outcome. Clustering is more useful as a supporting segmentation method.",
+  "Potential future use", "Create student-support personas such as attendance-risk, financial-risk, engagement-risk, or high-support-usage groups."
+)
+
+kable(cluster_discussion, align = "ll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+<hr class="section-divider">
+<h2>📦 Save Modeling Objects for Results Page</h2>
+```
+
+```{r save-model-objects}
+model_list <- list(
+  baseline_mean = baseline_mean,
+  mlr_model = mlr_model,
+  lasso_model = lasso_model,
+  gam_model = gam_model,
+  rf_model = rf_model,
+  gbm_model = gbm_model,
+  svm_model = svm_model,
+  nnet_model = nnet_model
+)
+
+modeling_objects <- list(
+  modeling_df = modeling_df,
+  train_df = train_df,
+  test_df = test_df,
+  early_warning_df = early_warning_df,
+  early_train_df = early_train_df,
+  early_test_df = early_test_df,
+  model_formula = model_formula,
+  early_model_formula = early_model_formula,
+  full_predictors = full_predictors,
+  early_warning_predictors = early_warning_predictors,
+  train_encoded = train_encoded,
+  test_encoded = test_encoded,
+  dummy_encoder = dummy_encoder,
+  model_list = model_list,
+  baseline_metrics = baseline_metrics
+)
+
+if (!dir.exists(here::here("data", "processed"))) {
+  dir.create(here::here("data", "processed"), recursive = TRUE)
+}
+
+saveRDS(modeling_objects, here::here("data", "processed", "student_retention_modeling_objects.rds"))
+```
+
+## 15. Modeling Summary
+
+```{r modeling-summary-table}
+modeling_summary <- tibble::tribble(
+  ~Model, ~Model_Family, ~Primary_Strength, ~Main_Limitation,
+  "Baseline Mean", "Reference model", "Simple comparison point", "Does not use predictors",
+  "Multiple Linear Regression", "Parametric", "Fast and interpretable", "Assumes mostly linear relationships",
+  "LASSO Regression", "Regularized parametric", "Feature selection and overfitting control", "May underfit if relationships are highly nonlinear",
+  "GAM", "Flexible regression", "Captures smoother nonlinear patterns", "Can be harder to tune and explain than linear regression",
+  "Random Forest", "Tree-based ensemble", "Captures nonlinear patterns and interactions", "Less interpretable than linear models",
+  "Gradient Boosted Trees", "Tree-based ensemble", "Strong predictive performance potential", "Can overfit without careful tuning",
+  "SVM Radial", "Kernel-based machine learning", "Flexible nonlinear modeling", "Less transparent and sensitive to tuning/scaling",
+  "Neural Network", "Single-hidden-layer network", "Can model complex relationships", "Less interpretable and more computationally sensitive"
+)
+
+kable(modeling_summary, align = "llll") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+  <div class="grid-3">
+
+    <div class="card">
+      <h4>🎯 Model Target</h4>
+      <p>
+        FinalGrade is the numeric outcome used for model development. AcademicRisk will be used later to translate predictions into student-support priorities.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>🧪 Model Coverage</h4>
+      <p>
+        The workflow includes linear, regularized, flexible, tree-based, kernel-based, and neural-network models to satisfy the technical requirements and compare modeling approaches.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>📈 Next Step</h4>
+      <p>
+        The results page will compare cross-validation performance, test-set metrics, hyperparameters, variable importance, and model ranking.
+      </p>
+    </div>
+
+  </div>
+
+  <div class="takeaway-box">
+    <b>Next File:</b> student_retention_results.Rmd will use the saved modeling objects to report model performance, optimal hyperparameters, train/test error, variable importance, and model ranking.
+  </div>
+
+  </div>
+</div>
+```

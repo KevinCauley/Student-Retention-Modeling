@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Student Retention EDA | Kevin Cauley</title>
+
+<script src="student_retention_eda_files/header-attrs-2.31/header-attrs.js"></script>
+<script src="student_retention_eda_files/kePrint-0.0.1/kePrint.js"></script>
+<link href="student_retention_eda_files/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="assets/styles.css" type="text/css" />
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Student Retention EDA | Kevin Cauley</h1>
+
+
+
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • June 19, 2026
+    </p>
+    
+    <h1 class="hero-title">Exploratory Data Analysis</h1>
+
+    <p class="hero-subtitle">
+      This page reviews the student dataset, variable roles, data quality, engineered features, and early patterns tied to final course performance.
+    </p>
+
+  </div>
+  
+  <div class="page-nav">
+    <a href="index.html" class="nav-pill nav-back">← Back: Home</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_modeling.html" class="nav-pill nav-next">Next: Modeling →</a>
+  </div>
+
+  <hr class="section-divider">
+<div id="dataset-context-domain-and-industry" class="section level2">
+<h2>1. Dataset Context, Domain, and Industry</h2>
+<p>This project uses undergraduate student records from Advance
+University, a private nonprofit university. The broader context is
+student retention and student success. In the institutional
+documentation, retention is defined as whether a student remains
+enrolled in the current semester after being enrolled in the previous
+term.</p>
+<p>For this project, <strong>FinalGrade</strong> is used as the primary
+modeling outcome. <strong>EnrollmentStatus</strong> is treated as a
+predictor and context variable rather than the outcome. This setup
+follows the final project direction: final academic performance is the
+technical response variable, while enrollment status helps explain
+academic outcomes.</p>
+<div class="metric-strip eda-metric-strip">
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Industry</span>
+    <span class="metric-tile-value">Higher Education</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Institution</span>
+    <span class="metric-tile-value">Private Nonprofit</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Dataset Level</span>
+    <span class="metric-tile-value">Undergraduate Records</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Student Records</span>
+    <span class="metric-tile-value">6,597</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Original Variables</span>
+    <span class="metric-tile-value">37</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Primary Outcome</span>
+    <span class="metric-tile-value">FinalGrade</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Context Variable</span>
+    <span class="metric-tile-value">EnrollmentStatus</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Risk Feature</span>
+    <span class="metric-tile-value">AcademicRisk</span>
+  </div>
+
+</div>
+</div>
+<div id="research-questions" class="section level2">
+<h2>2. Research Questions</h2>
+<p>The EDA is organized around three practical questions:</p>
+<ol style="list-style-type: decimal">
+<li>Which academic, attendance, financial, support-service, and
+engagement variables appear related to final course performance?</li>
+<li>Which variables should be retained for predictive modeling?</li>
+<li>What data quality issues should be documented before the modeling
+workflow begins?</li>
+</ol>
+</div>
+<div id="variable-measurement-type-and-modeling-role"
+class="section level2">
+<h2>3. Variable Measurement Type and Modeling Role</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Variable_Group
+</th>
+<th style="text-align:left;">
+Example_Variables
+</th>
+<th style="text-align:left;">
+Measurement_Type
+</th>
+<th style="text-align:left;">
+Modeling_Role
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Student identifier
+</td>
+<td style="text-align:left;">
+StudentID
+</td>
+<td style="text-align:left;">
+Nominal
+</td>
+<td style="text-align:left;">
+Identifier only; not used as a predictor
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Academic context
+</td>
+<td style="text-align:left;">
+Semester, Major, EnrollmentStatus
+</td>
+<td style="text-align:left;">
+Categorical
+</td>
+<td style="text-align:left;">
+Predictors and context variables
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Student characteristics
+</td>
+<td style="text-align:left;">
+Gender, Origin
+</td>
+<td style="text-align:left;">
+Categorical
+</td>
+<td style="text-align:left;">
+Context variables; require careful interpretation
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Academic performance
+</td>
+<td style="text-align:left;">
+FirstPartGrade, SecondPartGrade, FinalExamGrade, FinalGrade
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+FinalGrade is the outcome; earlier grade components are predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Attendance
+</td>
+<td style="text-align:left;">
+AbsencesFirstPart, AbsencesSecondPart, AbsencesThirdPart,
+AverageAbsences
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+Predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Online learning
+</td>
+<td style="text-align:left;">
+NumOnlineCourses
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+Predictor
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Financial indicators
+</td>
+<td style="text-align:left;">
+ScholarshipPercent, PastDueBalance
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+Predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Support services
+</td>
+<td style="text-align:left;">
+Advisory, counseling, tutoring, formative plan sessions
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+Predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Engagement/course experience
+</td>
+<td style="text-align:left;">
+Teacher evaluation items, CumulativeTeacherEval
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+Predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Conduct
+</td>
+<td style="text-align:left;">
+HonorFaults
+</td>
+<td style="text-align:left;">
+Numeric
+</td>
+<td style="text-align:left;">
+Predictor
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Derived risk feature
+</td>
+<td style="text-align:left;">
+AcademicRisk
+</td>
+<td style="text-align:left;">
+Categorical
+</td>
+<td style="text-align:left;">
+Support-review feature derived from FinalGrade
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="initial-data-inspection" class="section level2">
+<h2>4. Initial Data Inspection</h2>
+<p>The cleaned dataset contains the original workbook fields plus
+engineered features used for EDA and modeling. The cards below summarize
+the key inspection checks without repeating the same information in a
+second table.</p>
+<div class="metric-strip eda-metric-strip">
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Rows</span>
+    <span class="metric-tile-value">6,597</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Original Columns</span>
+    <span class="metric-tile-value">37</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Columns After Engineering</span>
+    <span class="metric-tile-value">41</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Duplicate Rows</span>
+    <span class="metric-tile-value">0</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Numeric Variables</span>
+    <span class="metric-tile-value">33</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Categorical Variables</span>
+    <span class="metric-tile-value">8</span>
+  </div>
+
+</div>
+</div>
+<div id="missing-values-review" class="section level2">
+<h2>5. Missing Values Review</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Result
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+No missing values were detected in the cleaned dataset.
+</td>
+</tr>
+</tbody>
+</table>
+<div class="takeaway-box">
+<p><b>Preprocessing Decision:</b> Missing values are reviewed before
+modeling. If a model-specific workflow requires complete cases, that
+filtering is handled during modeling rather than hidden inside the
+EDA.</p>
+</div>
+</div>
+<div id="outlier-and-anomaly-review" class="section level2">
+<h2>6. Outlier and Anomaly Review</h2>
+<p>Outliers are not automatically removed during EDA. Some extreme
+values may reflect meaningful cases, such as unusually high absences or
+large past-due balances. Values outside the expected grade range are
+documented and handled carefully in plots.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Grade Range
+</th>
+<th style="text-align:center;">
+Records
+</th>
+<th style="text-align:center;">
+Display Percent
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Within 0-100
+</td>
+<td style="text-align:center;">
+6594
+</td>
+<td style="text-align:center;">
+100.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Above 100
+</td>
+<td style="text-align:center;">
+3
+</td>
+<td style="text-align:center;">
+0.0%
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="preprocessing-and-feature-engineering-summary"
+class="section level2">
+<h2>7. Preprocessing and Feature Engineering Summary</h2>
+<p>The EDA keeps the original variables visible while adding a small
+number of features that make the data easier to analyze and model.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Step
+</th>
+<th style="text-align:left;">
+Applied_To
+</th>
+<th style="text-align:left;">
+Reason
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Column renaming
+</td>
+<td style="text-align:left;">
+Original workbook fields
+</td>
+<td style="text-align:left;">
+Improves readability in analysis and modeling code.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Type conversion
+</td>
+<td style="text-align:left;">
+StudentID, Semester, Major, EnrollmentStatus, Gender, Origin
+</td>
+<td style="text-align:left;">
+Categorical fields are treated as categories rather than continuous
+numbers.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AverageAbsences
+</td>
+<td style="text-align:left;">
+Absence fields across grading periods
+</td>
+<td style="text-align:left;">
+Creates one attendance measure for EDA and modeling.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+CumulativeTeacherEval
+</td>
+<td style="text-align:left;">
+Teacher evaluation items
+</td>
+<td style="text-align:left;">
+Summarizes multiple course-experience items into one engagement
+indicator.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AcademicRisk
+</td>
+<td style="text-align:left;">
+FinalGrade
+</td>
+<td style="text-align:left;">
+Flags students below the support-review threshold.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+GradeAnomalyFlag
+</td>
+<td style="text-align:left;">
+FinalGrade
+</td>
+<td style="text-align:left;">
+Documents values outside the expected 0-100 range.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="final-grade-distribution" class="section level2">
+<h2>8. Final Grade Distribution</h2>
+<p><img src="student_retention_eda_files/figure-html/08-final-grade-distribution-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="academic-risk-breakdown" class="section level2">
+<h2>9. Academic Risk Breakdown</h2>
+<p><img src="student_retention_eda_files/figure-html/09-academic-risk-breakdown-1.png" alt="" width="74%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="final-grade-by-enrollment-status" class="section level2">
+<h2>10. Final Grade by Enrollment Status</h2>
+<p><img src="student_retention_eda_files/figure-html/10-final-grade-by-enrollment-1.png" alt="" width="76%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="final-grade-by-academic-major" class="section level2">
+<h2>11. Final Grade by Academic Major</h2>
+<p><img src="student_retention_eda_files/figure-html/11-final-grade-by-major-1.png" alt="" width="82%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="academic-progression-across-grade-components"
+class="section level2">
+<h2>12. Academic Progression Across Grade Components</h2>
+<p><img src="student_retention_eda_files/figure-html/12-grade-components-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="attendance-and-final-grade" class="section level2">
+<h2>13. Attendance and Final Grade</h2>
+<p><img src="student_retention_eda_files/figure-html/13-attendance-final-grade-plot-1.png" alt="" width="76%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="financial-indicators-and-final-grade" class="section level2">
+<h2>14. Financial Indicators and Final Grade</h2>
+<p><img src="student_retention_eda_files/figure-html/14-financial-final-grade-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="support-service-usage-and-final-grade" class="section level2">
+<h2>15. Support-Service Usage and Final Grade</h2>
+<p><img src="student_retention_eda_files/figure-html/15-support-final-grade-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="engagement-signal-and-final-grade" class="section level2">
+<h2>16. Engagement Signal and Final Grade</h2>
+<p><img src="student_retention_eda_files/figure-html/16-engagement-final-grade-plot-1.png" alt="" width="76%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="correlation-analysis" class="section level2">
+<h2>17. Correlation Analysis</h2>
+<p>The correlation review focuses on numeric predictors and their
+relationship with FinalGrade. The heatmap mutes the diagonal so perfect
+self-correlations do not dominate the visual.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Predictor
+</th>
+<th style="text-align:right;">
+Correlation
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+FinalExamGrade
+</td>
+<td style="text-align:right;">
+0.858
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SecondPartGrade
+</td>
+<td style="text-align:right;">
+0.752
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+FirstPartGrade
+</td>
+<td style="text-align:right;">
+0.718
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AverageAbsences
+</td>
+<td style="text-align:right;">
+-0.384
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ScholarshipPercent
+</td>
+<td style="text-align:right;">
+0.316
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+PastDueBalance
+</td>
+<td style="text-align:right;">
+-0.098
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+HonorFaults
+</td>
+<td style="text-align:right;">
+-0.047
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+CumulativeTeacherEval
+</td>
+<td style="text-align:right;">
+0.036
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NumFormativePlanSessions
+</td>
+<td style="text-align:right;">
+-0.015
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NumAdvisorySessions
+</td>
+<td style="text-align:right;">
+-0.012
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NumMathTutoringSessions
+</td>
+<td style="text-align:right;">
+-0.007
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NumCounselingSessions
+</td>
+<td style="text-align:right;">
+-0.006
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_eda_files/figure-html/17-correlation-heatmap-1.png" alt="" width="82%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="preliminary-findings" class="section level2">
+<h2>18. Preliminary Findings</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Finding
+</th>
+<th style="text-align:left;">
+EDA_Interpretation
+</th>
+<th style="text-align:left;">
+Modeling_Implication
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Grade components are strongly related to FinalGrade.
+</td>
+<td style="text-align:left;">
+Earlier course performance provides a direct signal for final
+performance.
+</td>
+<td style="text-align:left;">
+Retain grade-related predictors for modeling.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Average absences are negatively related to FinalGrade.
+</td>
+<td style="text-align:left;">
+Attendance appears useful as an early-warning indicator.
+</td>
+<td style="text-align:left;">
+Retain AverageAbsences as a predictor.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Financial variables add context.
+</td>
+<td style="text-align:left;">
+Scholarship and past-due balance may help explain student pressure or
+support level.
+</td>
+<td style="text-align:left;">
+Use financial indicators carefully and interpret them as context.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Support-service usage needs careful interpretation.
+</td>
+<td style="text-align:left;">
+High support usage may reflect existing need, help-seeking behavior, or
+intervention activity.
+</td>
+<td style="text-align:left;">
+Retain support variables, but avoid causal claims.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Grade anomalies exist.
+</td>
+<td style="text-align:left;">
+A small number of grade values fall outside the expected range.
+</td>
+<td style="text-align:left;">
+Document anomalies and cap only for visualization when needed.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="variable-selection-rationale" class="section level2">
+<h2>19. Variable Selection Rationale</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Variable_Group
+</th>
+<th style="text-align:left;">
+Decision
+</th>
+<th style="text-align:left;">
+Reason
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+StudentID
+</td>
+<td style="text-align:left;">
+Exclude from modeling
+</td>
+<td style="text-align:left;">
+Identifier fields do not provide generalizable predictive information.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+FinalGrade
+</td>
+<td style="text-align:left;">
+Use as outcome
+</td>
+<td style="text-align:left;">
+Final course performance is the numeric response variable.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+EnrollmentStatus
+</td>
+<td style="text-align:left;">
+Use as predictor/context
+</td>
+<td style="text-align:left;">
+Enrollment status supports interpretation but is not the modeling
+target.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Grade components
+</td>
+<td style="text-align:left;">
+Use as predictors
+</td>
+<td style="text-align:left;">
+Earlier performance is relevant to final performance.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Attendance
+</td>
+<td style="text-align:left;">
+Use as predictors
+</td>
+<td style="text-align:left;">
+Absence patterns can support early intervention.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Financial indicators
+</td>
+<td style="text-align:left;">
+Use as predictors
+</td>
+<td style="text-align:left;">
+Financial context can help explain support needs.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Support-service variables
+</td>
+<td style="text-align:left;">
+Use as predictors
+</td>
+<td style="text-align:left;">
+Service usage may indicate need or support activity.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Teacher evaluation average
+</td>
+<td style="text-align:left;">
+Use as predictor
+</td>
+<td style="text-align:left;">
+Aggregated engagement/course-experience signal.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AcademicRisk
+</td>
+<td style="text-align:left;">
+Do not use as direct predictor for FinalGrade
+</td>
+<td style="text-align:left;">
+It is derived from FinalGrade and should be used for interpretation.
+</td>
+</tr>
+</tbody>
+</table>
+  <div class="takeaway-box">
+    <b>EDA Conclusion:</b> The cleaned dataset is ready for modeling. FinalGrade remains the target outcome, EnrollmentStatus is retained as a predictor/context variable, and AcademicRisk is used later to translate predicted grades into a support-review frame.
+  </div>
+
+  <div class="page-nav bottom-nav">
+    <a href="index.html" class="nav-pill nav-back">← Back: Home</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_modeling.html" class="nav-pill nav-next">Next: Modeling →</a>
+  </div>
+
+  </div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

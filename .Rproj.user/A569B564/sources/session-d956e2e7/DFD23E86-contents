@@ -1,0 +1,1010 @@
+---
+title: "Student Retention EDA | Kevin Cauley"
+
+output:
+  html_document:
+    always_allow_html: true
+    self_contained: false
+    toc: false
+    theme: null
+    highlight: null
+    fig_caption: true
+    css: assets/styles.css
+    includes:
+      in_header: ../docs/assets/header.html
+
+number_sections: false
+---
+
+```{r 00-setup, include=FALSE}
+library(here)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+PLOT_SUBFOLDER <- "eda"
+
+dir.create(here::here("docs"), showWarnings = FALSE, recursive = TRUE)
+dir.create(here::here("docs", "figures"), showWarnings = FALSE, recursive = TRUE)
+dir.create(here::here("docs", "figures", PLOT_SUBFOLDER), showWarnings = FALSE, recursive = TRUE)
+
+save_plot <- function(plot_object, filename, width = 8.8, height = 5.4, dpi = 300) {
+  plot_path <- here::here("docs", "figures", PLOT_SUBFOLDER, filename)
+
+  ggplot2::ggsave(
+    filename = plot_path,
+    plot = plot_object,
+    width = width,
+    height = height,
+    dpi = dpi,
+    bg = "white"
+  )
+}
+
+cat("Using plot folder:", here::here("docs", "figures", PLOT_SUBFOLDER), "\n")
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "78%",
+  fig.retina = 2,
+  fig.width = 7.0,
+  fig.height = 4.0,
+  dpi = 220,
+  cache = FALSE,
+  dev = "png"
+)
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(tibble)
+
+wrap_text <- function(x, width = 58) {
+  stringr::str_wrap(x, width = width)
+}
+
+theme_student <- function(base_size = 10.5) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.title = element_text(
+        face = "bold",
+        size = base_size + 3,
+        color = "#1F2D3D",
+        lineheight = 1.08,
+        margin = margin(b = 5)
+      ),
+      plot.subtitle = element_text(
+        size = base_size,
+        color = "#617284",
+        lineheight = 1.15,
+        margin = margin(b = 10)
+      ),
+      axis.title = element_text(
+        face = "bold",
+        color = "#1F2D3D",
+        size = base_size + 0.5
+      ),
+      axis.text = element_text(
+        color = "#4A5568",
+        size = base_size - 0.5
+      ),
+      panel.grid.major = element_line(color = "#E8EEF5", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(
+        face = "bold",
+        color = "#1F2D3D",
+        size = base_size
+      ),
+      strip.background = element_rect(fill = "#EEF7FF", color = NA),
+      plot.margin = margin(18, 22, 16, 18),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold")
+    )
+}
+
+student_blue <- "#3A86FF"
+student_teal <- "#2A9D8F"
+student_navy <- "#17324D"
+student_gold <- "#F2B84B"
+student_red <- "#D95D5D"
+student_gray <- "#8A97A6"
+```
+
+```{r 01-load-and-clean-data}
+data_path <- dplyr::case_when(
+  file.exists(here::here("data", "raw", "collegeret.xlsx")) ~ here::here("data", "raw", "collegeret.xlsx"),
+  file.exists(here::here("data", "raw", "COLLEGE_RET_SV.xlsx")) ~ here::here("data", "raw", "COLLEGE_RET_SV.xlsx"),
+  file.exists(here::here("collegeret.xlsx")) ~ here::here("collegeret.xlsx"),
+  file.exists(here::here("COLLEGE_RET_SV.xlsx")) ~ here::here("COLLEGE_RET_SV.xlsx"),
+  TRUE ~ NA_character_
+)
+
+if (is.na(data_path)) {
+  stop("Could not find collegeret.xlsx or COLLEGE_RET_SV.xlsx. Place the workbook in data/raw/ and rebuild.")
+}
+
+student_raw <- read_excel(data_path, sheet = "DB")
+
+original_row_count <- nrow(student_raw)
+original_variable_count <- ncol(student_raw)
+
+name_map <- c(
+  "ID" = "StudentID",
+  "SEMESTER" = "Semester",
+  "MAJOR" = "Major",
+  "ESTATUS" = "EnrollmentStatus",
+  "GENDER" = "Gender",
+  "ORIGIN" = "Origin",
+  "FIRSTPART_GRADE" = "FirstPartGrade",
+  "SECONDPARTIAL_GRADE" = "SecondPartGrade",
+  "FINALEXAM_GRADE" = "FinalExamGrade",
+  "FINAL_GRADE" = "FinalGrade",
+  "ABSENCES_FIRSTPARTIAL" = "AbsencesFirstPart",
+  "ABSENCES_SECONDPARTIAL" = "AbsencesSecondPart",
+  "ABSENCES_THIRDDPARTIAL" = "AbsencesThirdPart",
+  "NUMCOURSES_ONLINE" = "NumOnlineCourses",
+  "SCHOLARSHIP_PERCENT" = "ScholarshipPercent",
+  "PASTDUE_BALANCE" = "PastDueBalance",
+  "NUMBSESSIONS_ADVISORY" = "NumAdvisorySessions",
+  "NUMBSESSIONS_COUNSELING" = "NumCounselingSessions",
+  "TUTORINGMATH_SESSIONS" = "NumMathTutoringSessions",
+  "FORMATIVEPLAN_Q5" = "NumFormativePlanSessions",
+  "TEACHEREVAL_Q1" = "TeacherEvalQ1",
+  "TEACHEREVAL_Q2" = "TeacherEvalQ2",
+  "TEACHEREVAL_Q3" = "TeacherEvalQ3",
+  "TEACHEREVAL_Q4" = "TeacherEvalQ4",
+  "TEACHEREVAL_Q5" = "TeacherEvalQ5",
+  "TEACHEREVAL_Q6" = "TeacherEvalQ6",
+  "TEACHEREVAL_Q7" = "TeacherEvalQ7",
+  "TEACHEREVAL_Q8" = "TeacherEvalQ8",
+  "TEACHEREVAL_Q9" = "TeacherEvalQ9",
+  "TEACHEREVAL_Q10" = "TeacherEvalQ10",
+  "TEACHEREVAL_Q11" = "TeacherEvalQ11",
+  "TEACHEREVAL_Q12" = "TeacherEvalQ12",
+  "TEACHEREVAL_Q13" = "TeacherEvalQ13",
+  "TEACHEREVAL_Q14" = "TeacherEvalQ14",
+  "TEACHEREVAL_Q15" = "TeacherEvalQ15",
+  "TEACHEREVAL_Q16" = "TeacherEvalQ16",
+  "HONOR_FAULTS" = "HonorFaults"
+)
+
+new_names <- names(student_raw)
+mapped_names <- name_map[new_names]
+new_names[!is.na(mapped_names)] <- mapped_names[!is.na(mapped_names)]
+names(student_raw) <- new_names
+
+teacher_eval_vars <- names(student_raw)[str_detect(names(student_raw), "^TeacherEvalQ")]
+
+student_clean <- student_raw %>%
+  mutate(
+    across(where(is.character), ~ str_squish(.x)),
+    across(
+      c(StudentID, Semester, Major, EnrollmentStatus, Gender, Origin),
+      as.factor
+    ),
+    AverageAbsences = rowMeans(
+      across(c(AbsencesFirstPart, AbsencesSecondPart, AbsencesThirdPart)),
+      na.rm = TRUE
+    ),
+    CumulativeTeacherEval = rowMeans(
+      across(all_of(teacher_eval_vars)),
+      na.rm = TRUE
+    ),
+    CumulativeTeacherEval = if_else(is.nan(CumulativeTeacherEval), NA_real_, CumulativeTeacherEval),
+    AcademicRisk = if_else(FinalGrade < 70, "At Risk", "Not At Risk"),
+    AcademicRisk = factor(AcademicRisk, levels = c("Not At Risk", "At Risk")),
+    GradeAnomalyFlag = case_when(
+      FinalGrade < 0 ~ "Below 0",
+      FinalGrade > 100 ~ "Above 100",
+      TRUE ~ "Within 0-100"
+    )
+  )
+
+dir.create(here::here("data", "processed"), showWarnings = FALSE, recursive = TRUE)
+saveRDS(student_clean, here::here("data", "processed", "student_retention_cleaned.rds"))
+
+numeric_vars <- student_clean %>%
+  select(where(is.numeric)) %>%
+  names()
+
+categorical_vars <- student_clean %>%
+  select(where(~ is.factor(.x) || is.character(.x))) %>%
+  names()
+
+duplicate_rows <- sum(duplicated(student_clean))
+
+missing_summary <- student_clean %>%
+  summarise(across(everything(), ~ sum(is.na(.x)))) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Missing_Values"
+  ) %>%
+  mutate(
+    Missing_Percent = Missing_Values / nrow(student_clean)
+  ) %>%
+  arrange(desc(Missing_Values), Variable)
+
+missing_nonzero <- missing_summary %>%
+  filter(Missing_Values > 0)
+
+risk_summary <- student_clean %>%
+  count(AcademicRisk) %>%
+  mutate(
+    Percent = n / sum(n),
+    Label = paste0(comma(n), "\n", percent(Percent, accuracy = 0.1))
+  )
+
+grade_anomaly_summary <- student_clean %>%
+  count(GradeAnomalyFlag) %>%
+  mutate(
+    Percent = n / sum(n),
+    Percent_Label = percent(Percent, accuracy = 0.1)
+  ) %>%
+  arrange(desc(n))
+
+grade_plot_df <- student_clean %>%
+  filter(!is.na(FinalGrade)) %>%
+  mutate(
+    FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100)
+  )
+
+major_order <- student_clean %>%
+  filter(!is.na(Major), !is.na(FinalGrade)) %>%
+  group_by(Major) %>%
+  summarise(Median_FinalGrade = median(FinalGrade, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(Median_FinalGrade)) %>%
+  pull(Major)
+
+student_clean <- student_clean %>%
+  mutate(Major = factor(Major, levels = major_order))
+```
+
+```{=html}
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • `r format(Sys.Date(), '%B %d, %Y')`
+    </p>
+    
+    <h1 class="hero-title">Exploratory Data Analysis</h1>
+
+    <p class="hero-subtitle">
+      This page reviews the student dataset, variable roles, data quality, engineered features, and early patterns tied to final course performance.
+    </p>
+
+  </div>
+  
+  <div class="page-nav">
+    <a href="index.html" class="nav-pill nav-back">← Back: Home</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_modeling.html" class="nav-pill nav-next">Next: Modeling →</a>
+  </div>
+
+  <hr class="section-divider">
+```
+
+## 1. Dataset Context, Domain, and Industry
+
+This project uses undergraduate student records from Advance University, a private nonprofit university. The broader context is student retention and student success. In the institutional documentation, retention is defined as whether a student remains enrolled in the current semester after being enrolled in the previous term.
+
+For this project, **FinalGrade** is used as the primary modeling outcome. **EnrollmentStatus** is treated as a predictor and context variable rather than the outcome. This setup follows the final project direction: final academic performance is the technical response variable, while enrollment status helps explain academic outcomes.
+
+```{=html}
+<div class="metric-strip eda-metric-strip">
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Industry</span>
+    <span class="metric-tile-value">Higher Education</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Institution</span>
+    <span class="metric-tile-value">Private Nonprofit</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Dataset Level</span>
+    <span class="metric-tile-value">Undergraduate Records</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Student Records</span>
+    <span class="metric-tile-value">`r comma(nrow(student_clean))`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Original Variables</span>
+    <span class="metric-tile-value">`r comma(original_variable_count)`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Primary Outcome</span>
+    <span class="metric-tile-value">FinalGrade</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Context Variable</span>
+    <span class="metric-tile-value">EnrollmentStatus</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Risk Feature</span>
+    <span class="metric-tile-value">AcademicRisk</span>
+  </div>
+
+</div>
+```
+
+## 2. Research Questions
+
+The EDA is organized around three practical questions:
+
+1. Which academic, attendance, financial, support-service, and engagement variables appear related to final course performance?
+2. Which variables should be retained for predictive modeling?
+3. What data quality issues should be documented before the modeling workflow begins?
+
+## 3. Variable Measurement Type and Modeling Role
+
+```{r 03-variable-role-table}
+variable_role_table <- tibble::tribble(
+  ~Variable_Group, ~Example_Variables, ~Measurement_Type, ~Modeling_Role,
+  "Student identifier", "StudentID", "Nominal", "Identifier only; not used as a predictor",
+  "Academic context", "Semester, Major, EnrollmentStatus", "Categorical", "Predictors and context variables",
+  "Student characteristics", "Gender, Origin", "Categorical", "Context variables; require careful interpretation",
+  "Academic performance", "FirstPartGrade, SecondPartGrade, FinalExamGrade, FinalGrade", "Numeric", "FinalGrade is the outcome; earlier grade components are predictors",
+  "Attendance", "AbsencesFirstPart, AbsencesSecondPart, AbsencesThirdPart, AverageAbsences", "Numeric", "Predictors",
+  "Online learning", "NumOnlineCourses", "Numeric", "Predictor",
+  "Financial indicators", "ScholarshipPercent, PastDueBalance", "Numeric", "Predictors",
+  "Support services", "Advisory, counseling, tutoring, formative plan sessions", "Numeric", "Predictors",
+  "Engagement/course experience", "Teacher evaluation items, CumulativeTeacherEval", "Numeric", "Predictors",
+  "Conduct", "HonorFaults", "Numeric", "Predictor",
+  "Derived risk feature", "AcademicRisk", "Categorical", "Support-review feature derived from FinalGrade"
+)
+
+kable(variable_role_table, align = "llll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 4. Initial Data Inspection
+
+The cleaned dataset contains the original workbook fields plus engineered features used for EDA and modeling. The cards below summarize the key inspection checks without repeating the same information in a second table.
+
+```{=html}
+<div class="metric-strip eda-metric-strip">
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Rows</span>
+    <span class="metric-tile-value">`r comma(nrow(student_clean))`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Original Columns</span>
+    <span class="metric-tile-value">`r comma(original_variable_count)`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Columns After Engineering</span>
+    <span class="metric-tile-value">`r comma(ncol(student_clean))`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Duplicate Rows</span>
+    <span class="metric-tile-value">`r comma(duplicate_rows)`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Numeric Variables</span>
+    <span class="metric-tile-value">`r comma(length(numeric_vars))`</span>
+  </div>
+
+  <div class="metric-tile">
+    <span class="metric-tile-label">Categorical Variables</span>
+    <span class="metric-tile-value">`r comma(length(categorical_vars))`</span>
+  </div>
+
+</div>
+```
+
+## 5. Missing Values Review
+
+```{r 05-missing-values-table}
+if (nrow(missing_nonzero) == 0) {
+
+  missing_display <- tibble(
+    Result = "No missing values were detected in the cleaned dataset."
+  )
+
+  kable(missing_display, align = "l") %>%
+    kable_styling(
+      full_width = FALSE,
+      bootstrap_options = c("striped", "hover", "condensed", "responsive")
+    )
+
+} else {
+
+  missing_display <- missing_nonzero %>%
+    mutate(Missing_Percent = percent(Missing_Percent, accuracy = 0.1)) %>%
+    rename(
+      `Missing Values` = Missing_Values,
+      `Missing Percent` = Missing_Percent
+    )
+
+  kable(missing_display, align = "lrr") %>%
+    kable_styling(
+      full_width = TRUE,
+      bootstrap_options = c("striped", "hover", "condensed", "responsive")
+    )
+
+}
+```
+
+<div class="takeaway-box">
+  <b>Preprocessing Decision:</b> Missing values are reviewed before modeling. If a model-specific workflow requires complete cases, that filtering is handled during modeling rather than hidden inside the EDA.
+</div>
+
+## 6. Outlier and Anomaly Review
+
+Outliers are not automatically removed during EDA. Some extreme values may reflect meaningful cases, such as unusually high absences or large past-due balances. Values outside the expected grade range are documented and handled carefully in plots.
+
+```{r 06-grade-anomaly-table}
+grade_anomaly_display <- grade_anomaly_summary %>%
+  dplyr::select(GradeAnomalyFlag, n, Percent_Label) %>%
+  dplyr::rename(
+    `Grade Range` = GradeAnomalyFlag,
+    Records = n,
+    `Display Percent` = Percent_Label
+  )
+
+kable(grade_anomaly_display, align = "lcc") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 7. Preprocessing and Feature Engineering Summary
+
+The EDA keeps the original variables visible while adding a small number of features that make the data easier to analyze and model.
+
+```{r 07-preprocessing-table}
+preprocessing_table <- tibble::tribble(
+  ~Step, ~Applied_To, ~Reason,
+  "Column renaming", "Original workbook fields", "Improves readability in analysis and modeling code.",
+  "Type conversion", "StudentID, Semester, Major, EnrollmentStatus, Gender, Origin", "Categorical fields are treated as categories rather than continuous numbers.",
+  "AverageAbsences", "Absence fields across grading periods", "Creates one attendance measure for EDA and modeling.",
+  "CumulativeTeacherEval", "Teacher evaluation items", "Summarizes multiple course-experience items into one engagement indicator.",
+  "AcademicRisk", "FinalGrade", "Flags students below the support-review threshold.",
+  "GradeAnomalyFlag", "FinalGrade", "Documents values outside the expected 0-100 range."
+)
+
+kable(preprocessing_table, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 8. Final Grade Distribution
+
+```{r 08-final-grade-distribution, fig.width=7.0, fig.height=4.0, out.width="78%"}
+p <- ggplot(grade_plot_df, aes(x = FinalGrade_Capped)) +
+  geom_histogram(
+    binwidth = 5,
+    boundary = 0,
+    fill = student_teal,
+    color = "white",
+    linewidth = 0.25,
+    alpha = 0.95
+  ) +
+  geom_vline(
+    xintercept = 70,
+    linetype = "dashed",
+    linewidth = 0.8,
+    color = student_red
+  ) +
+  annotate(
+    "label",
+    x = 72,
+    y = Inf,
+    label = "Risk threshold",
+    vjust = 1.7,
+    hjust = 0,
+    label.size = 0.25,
+    color = student_red,
+    fill = "white"
+  ) +
+  scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 10)) +
+  scale_y_continuous(labels = comma, expand = expansion(mult = c(0, 0.08))) +
+  labs(
+    title = "Distribution of Final Course Grades",
+    subtitle = wrap_text("Grades are capped to the expected 0-100 range for this visual so documented anomalies do not distort the chart."),
+    x = "Final Grade",
+    y = "Number of Students"
+  ) +
+  theme_student(10.2)
+
+print(p)
+
+save_plot(
+  p,
+  "final_grade_distribution.png",
+  width = 8.8,
+  height = 5.2
+)
+```
+
+## 9. Academic Risk Breakdown
+
+```{r 09-academic-risk-breakdown, fig.width=6.8, fig.height=4.2, out.width="74%"}
+risk_y_max <- max(risk_summary$n, na.rm = TRUE) * 1.38
+
+p <- ggplot(risk_summary, aes(x = AcademicRisk, y = n, fill = AcademicRisk)) +
+  geom_col(width = 0.55, alpha = 0.95) +
+  geom_label(
+    aes(label = Label),
+    vjust = -0.10,
+    size = 3.35,
+    fontface = "bold",
+    label.size = 0,
+    fill = "white"
+  ) +
+  scale_fill_manual(values = c("Not At Risk" = student_teal, "At Risk" = student_red)) +
+  scale_y_continuous(
+    labels = comma,
+    limits = c(0, risk_y_max),
+    expand = expansion(mult = c(0, 0.04))
+  ) +
+  coord_cartesian(clip = "off") +
+  labs(
+    title = "Academic Risk Segmentation",
+    subtitle = wrap_text("Students below the final-grade threshold are flagged for possible support review."),
+    x = NULL,
+    y = "Number of Students"
+  ) +
+  theme_student(10.2) +
+  theme(
+    legend.position = "none",
+    plot.margin = margin(24, 22, 16, 18)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "academic_risk_breakdown.png",
+  width = 7.8,
+  height = 5.0
+)
+```
+
+## 10. Final Grade by Enrollment Status
+
+```{r 10-final-grade-by-enrollment, fig.width=6.8, fig.height=4.0, out.width="76%"}
+enrollment_plot_df <- student_clean %>%
+  filter(!is.na(EnrollmentStatus), !is.na(FinalGrade)) %>%
+  mutate(FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100))
+
+p <- ggplot(enrollment_plot_df, aes(x = EnrollmentStatus, y = FinalGrade_Capped, fill = EnrollmentStatus)) +
+  geom_boxplot(
+    width = 0.55,
+    alpha = 0.85,
+    outlier.alpha = 0.18,
+    color = student_navy
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(
+    title = "Final Grade by Enrollment Status",
+    subtitle = wrap_text("Enrollment status is used as context and as a predictor, not as the modeling outcome."),
+    x = "Enrollment Status",
+    y = "Final Grade"
+  ) +
+  theme_student(10.2) +
+  theme(legend.position = "none")
+
+print(p)
+
+save_plot(
+  p,
+  "final_grade_by_enrollment_status.png",
+  width = 8.4,
+  height = 5.1
+)
+```
+
+## 11. Final Grade by Academic Major
+
+```{r 11-final-grade-by-major, fig.width=7.4, fig.height=5.6, out.width="82%"}
+major_plot_df <- student_clean %>%
+  filter(!is.na(Major), !is.na(FinalGrade)) %>%
+  mutate(
+    FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100),
+    Major = fct_reorder(Major, FinalGrade_Capped, .fun = median, na.rm = TRUE)
+  )
+
+p <- ggplot(major_plot_df, aes(x = FinalGrade_Capped, y = Major, fill = Major)) +
+  geom_boxplot(
+    width = 0.44,
+    outlier.alpha = 0.16,
+    outlier.size = 0.75,
+    color = student_navy,
+    linewidth = 0.35
+  ) +
+  scale_fill_viridis_d(option = "C", guide = "none") +
+  coord_cartesian(xlim = c(0, 100)) +
+  labs(
+    title = "Final Grade by Academic Major",
+    subtitle = wrap_text("Program-level differences provide context for course planning, advising, and model interpretation."),
+    x = "Final Grade",
+    y = NULL
+  ) +
+  theme_student(9.4)
+
+print(p)
+
+save_plot(
+  p,
+  "final_grade_by_academic_major.png",
+  width = 9.2,
+  height = 6.8
+)
+```
+
+## 12. Academic Progression Across Grade Components
+
+```{r 12-grade-components-plot, fig.width=7.0, fig.height=4.1, out.width="78%"}
+grade_component_df <- student_clean %>%
+  transmute(
+    `First Part Grade` = pmin(pmax(FirstPartGrade, 0), 100),
+    `Second Part Grade` = pmin(pmax(SecondPartGrade, 0), 100),
+    `Final Exam Grade` = pmin(pmax(FinalExamGrade, 0), 100),
+    `Final Grade` = pmin(pmax(FinalGrade, 0), 100)
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Component",
+    values_to = "Grade"
+  ) %>%
+  filter(!is.na(Grade)) %>%
+  mutate(
+    Component = factor(
+      Component,
+      levels = c("First Part Grade", "Second Part Grade", "Final Exam Grade", "Final Grade")
+    )
+  )
+
+p <- ggplot(grade_component_df, aes(x = Component, y = Grade, fill = Component)) +
+  geom_boxplot(
+    width = 0.55,
+    alpha = 0.88,
+    outlier.alpha = 0.14,
+    color = student_navy
+  ) +
+  scale_fill_manual(values = c(student_blue, student_teal, student_gold, student_red)) +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(
+    title = "Academic Performance Across Course Components",
+    subtitle = wrap_text("Earlier grade components are candidate predictors for final course performance."),
+    x = NULL,
+    y = "Grade"
+  ) +
+  theme_student(10.2) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 15, hjust = 1)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "academic_progression_grade_components.png",
+  width = 8.8,
+  height = 5.3
+)
+```
+
+## 13. Attendance and Final Grade
+
+```{r 13-attendance-final-grade-plot, fig.width=6.8, fig.height=4.0, out.width="76%"}
+attendance_plot_df <- student_clean %>%
+  filter(!is.na(AverageAbsences), !is.na(FinalGrade)) %>%
+  mutate(
+    FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100),
+    AverageAbsences_Capped = pmin(AverageAbsences, quantile(AverageAbsences, 0.98, na.rm = TRUE))
+  )
+
+p <- ggplot(attendance_plot_df, aes(x = AverageAbsences_Capped, y = FinalGrade_Capped)) +
+  geom_point(alpha = 0.22, size = 1.1, color = student_navy) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.9, color = student_blue) +
+  labs(
+    title = "Average Absences vs. Final Grade",
+    subtitle = wrap_text("Attendance provides a practical early-warning signal for academic performance."),
+    x = "Average Absences Across Grading Periods",
+    y = "Final Grade"
+  ) +
+  theme_student(10.2)
+
+print(p)
+
+save_plot(
+  p,
+  "average_absences_vs_final_grade.png",
+  width = 8.4,
+  height = 5.1
+)
+```
+
+## 14. Financial Indicators and Final Grade
+
+```{r 14-financial-final-grade-plot, fig.width=7.0, fig.height=4.0, out.width="78%"}
+financial_plot_df <- student_clean %>%
+  transmute(
+    FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100),
+    `Scholarship Percent` = ScholarshipPercent,
+    `Past-Due Balance` = pmin(PastDueBalance, quantile(PastDueBalance, 0.95, na.rm = TRUE))
+  ) %>%
+  pivot_longer(
+    cols = c(`Scholarship Percent`, `Past-Due Balance`),
+    names_to = "Financial_Indicator",
+    values_to = "Value"
+  ) %>%
+  filter(!is.na(Value), !is.na(FinalGrade_Capped))
+
+p <- ggplot(financial_plot_df, aes(x = Value, y = FinalGrade_Capped)) +
+  geom_point(alpha = 0.22, size = 1.0, color = student_navy) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.85, color = student_blue) +
+  facet_wrap(~ Financial_Indicator, scales = "free_x", nrow = 1) +
+  labs(
+    title = "Financial Indicators vs. Final Grade",
+    subtitle = wrap_text("Financial variables provide support context and should be interpreted carefully."),
+    x = "Value",
+    y = "Final Grade"
+  ) +
+  theme_student(10.2)
+
+print(p)
+
+save_plot(
+  p,
+  "financial_indicators_vs_final_grade.png",
+  width = 8.8,
+  height = 5.1
+)
+```
+
+## 15. Support-Service Usage and Final Grade
+
+```{r 15-support-final-grade-plot, fig.width=7.0, fig.height=4.2, out.width="78%"}
+support_plot_df <- student_clean %>%
+  transmute(
+    FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100),
+    `Advisory Sessions` = NumAdvisorySessions,
+    `Counseling Sessions` = NumCounselingSessions,
+    `Math Tutoring Sessions` = NumMathTutoringSessions,
+    `Formative Plan Sessions` = NumFormativePlanSessions
+  ) %>%
+  pivot_longer(
+    cols = c(
+      `Advisory Sessions`,
+      `Counseling Sessions`,
+      `Math Tutoring Sessions`,
+      `Formative Plan Sessions`
+    ),
+    names_to = "Support_Service",
+    values_to = "Sessions"
+  ) %>%
+  filter(!is.na(Sessions), !is.na(FinalGrade_Capped))
+
+p <- ggplot(support_plot_df, aes(x = Sessions, y = FinalGrade_Capped)) +
+  geom_jitter(width = 0.12, height = 0, alpha = 0.20, size = 0.9, color = student_navy) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.8, color = student_blue) +
+  facet_wrap(~ Support_Service, scales = "free_x", ncol = 2) +
+  labs(
+    title = "Support-Service Usage vs. Final Grade",
+    subtitle = wrap_text("Support-service use may reflect help-seeking behavior, existing need, or both."),
+    x = "Number of Sessions",
+    y = "Final Grade"
+  ) +
+  theme_student(9.8)
+
+print(p)
+
+save_plot(
+  p,
+  "support_service_usage_vs_final_grade.png",
+  width = 9.0,
+  height = 5.8
+)
+```
+
+## 16. Engagement Signal and Final Grade
+
+```{r 16-engagement-final-grade-plot, fig.width=6.8, fig.height=4.0, out.width="76%"}
+engagement_plot_df <- student_clean %>%
+  filter(!is.na(CumulativeTeacherEval), !is.na(FinalGrade)) %>%
+  mutate(FinalGrade_Capped = pmin(pmax(FinalGrade, 0), 100))
+
+p <- ggplot(engagement_plot_df, aes(x = CumulativeTeacherEval, y = FinalGrade_Capped)) +
+  geom_point(alpha = 0.20, size = 1.0, color = student_navy) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 0.9, color = student_blue) +
+  labs(
+    title = "Teacher Evaluation Average vs. Final Grade",
+    subtitle = wrap_text("Teacher evaluation items are aggregated into a course-experience indicator."),
+    x = "Teacher Evaluation Average",
+    y = "Final Grade"
+  ) +
+  theme_student(10.2)
+
+print(p)
+
+save_plot(
+  p,
+  "teacher_evaluation_average_vs_final_grade.png",
+  width = 8.4,
+  height = 5.1
+)
+```
+
+## 17. Correlation Analysis
+
+The correlation review focuses on numeric predictors and their relationship with FinalGrade. The heatmap mutes the diagonal so perfect self-correlations do not dominate the visual.
+
+```{r 17-correlation-summary-table}
+cor_vars <- c(
+  "FirstPartGrade",
+  "SecondPartGrade",
+  "FinalExamGrade",
+  "FinalGrade",
+  "AverageAbsences",
+  "ScholarshipPercent",
+  "PastDueBalance",
+  "NumAdvisorySessions",
+  "NumCounselingSessions",
+  "NumMathTutoringSessions",
+  "NumFormativePlanSessions",
+  "CumulativeTeacherEval",
+  "HonorFaults"
+)
+
+cor_data <- student_clean %>%
+  select(any_of(cor_vars)) %>%
+  drop_na()
+
+cor_matrix <- cor(cor_data, use = "pairwise.complete.obs")
+
+final_grade_correlations <- as.data.frame(cor_matrix) %>%
+  rownames_to_column("Predictor") %>%
+  select(Predictor, Correlation = FinalGrade) %>%
+  filter(Predictor != "FinalGrade") %>%
+  arrange(desc(abs(Correlation))) %>%
+  mutate(
+    Correlation = number(Correlation, accuracy = 0.001)
+  )
+
+kable(final_grade_correlations, align = "lr") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r 17-correlation-heatmap, fig.width=7.2, fig.height=5.0, out.width="82%"}
+cor_long <- as.data.frame(cor_matrix) %>%
+  rownames_to_column("Var1") %>%
+  pivot_longer(
+    cols = -Var1,
+    names_to = "Var2",
+    values_to = "Correlation"
+  ) %>%
+  mutate(
+    Var1 = factor(Var1, levels = rev(cor_vars)),
+    Var2 = factor(Var2, levels = cor_vars),
+    Diagonal = as.character(Var1) == as.character(Var2),
+    Correlation_Display = if_else(Diagonal, NA_real_, Correlation)
+  )
+
+p <- ggplot(cor_long, aes(x = Var2, y = Var1, fill = Correlation_Display)) +
+  geom_tile(color = "white", linewidth = 0.25) +
+  scale_fill_gradient2(
+    low = student_red,
+    mid = "#F8FAFC",
+    high = student_blue,
+    midpoint = 0,
+    limits = c(-1, 1),
+    na.value = "#EDF2F7"
+  ) +
+  labs(
+    title = "Correlation Heatmap of Numeric Variables",
+    subtitle = wrap_text("The diagonal is muted because each variable is perfectly correlated with itself."),
+    x = NULL,
+    y = NULL,
+    fill = "Correlation"
+  ) +
+  theme_student(9.4) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "correlation_heatmap_numeric_variables.png",
+  width = 9.2,
+  height = 6.4
+)
+```
+
+## 18. Preliminary Findings
+
+```{r 18-preliminary-findings-table}
+preliminary_findings <- tibble::tribble(
+  ~Finding, ~EDA_Interpretation, ~Modeling_Implication,
+  "Grade components are strongly related to FinalGrade.", "Earlier course performance provides a direct signal for final performance.", "Retain grade-related predictors for modeling.",
+  "Average absences are negatively related to FinalGrade.", "Attendance appears useful as an early-warning indicator.", "Retain AverageAbsences as a predictor.",
+  "Financial variables add context.", "Scholarship and past-due balance may help explain student pressure or support level.", "Use financial indicators carefully and interpret them as context.",
+  "Support-service usage needs careful interpretation.", "High support usage may reflect existing need, help-seeking behavior, or intervention activity.", "Retain support variables, but avoid causal claims.",
+  "Grade anomalies exist.", "A small number of grade values fall outside the expected range.", "Document anomalies and cap only for visualization when needed."
+)
+
+kable(preliminary_findings, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 19. Variable Selection Rationale
+
+```{r 19-variable-selection-table}
+variable_selection <- tibble::tribble(
+  ~Variable_Group, ~Decision, ~Reason,
+  "StudentID", "Exclude from modeling", "Identifier fields do not provide generalizable predictive information.",
+  "FinalGrade", "Use as outcome", "Final course performance is the numeric response variable.",
+  "EnrollmentStatus", "Use as predictor/context", "Enrollment status supports interpretation but is not the modeling target.",
+  "Grade components", "Use as predictors", "Earlier performance is relevant to final performance.",
+  "Attendance", "Use as predictors", "Absence patterns can support early intervention.",
+  "Financial indicators", "Use as predictors", "Financial context can help explain support needs.",
+  "Support-service variables", "Use as predictors", "Service usage may indicate need or support activity.",
+  "Teacher evaluation average", "Use as predictor", "Aggregated engagement/course-experience signal.",
+  "AcademicRisk", "Do not use as direct predictor for FinalGrade", "It is derived from FinalGrade and should be used for interpretation."
+)
+
+kable(variable_selection, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+  <div class="takeaway-box">
+    <b>EDA Conclusion:</b> The cleaned dataset is ready for modeling. FinalGrade remains the target outcome, EnrollmentStatus is retained as a predictor/context variable, and AcademicRisk is used later to translate predicted grades into a support-review frame.
+  </div>
+
+  <div class="page-nav bottom-nav">
+    <a href="index.html" class="nav-pill nav-back">← Back: Home</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_modeling.html" class="nav-pill nav-next">Next: Modeling →</a>
+  </div>
+
+  </div>
+</div>
+```

@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Student Retention Results | Kevin Cauley</title>
+
+<script src="student_retention_results_files/header-attrs-2.31/header-attrs.js"></script>
+<script src="student_retention_results_files/kePrint-0.0.1/kePrint.js"></script>
+<link href="student_retention_results_files/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="assets/styles.css?v=20260619" type="text/css" />
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Student Retention Results | Kevin
+Cauley</h1>
+
+
+
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • June 19, 2026
+    </p>
+    
+    <h1 class="hero-title">Model Results & Comparison</h1>
+
+    <p class="hero-subtitle">
+      This page compares the trained models using cross-validation results, holdout testing performance, train/test error gaps, selected hyperparameters, variable importance, and final model ranking.
+    </p>
+
+  </div>
+  
+  <div class="page-nav">
+  <a href="student_retention_modeling.html" class="nav-pill nav-back">← Back: Modeling</a>
+  <a href="index.html" class="nav-pill nav-home">Home</a>
+  <a href="student_retention_insights.html" class="nav-pill nav-next">Next: Insights →</a>
+  </div>
+
+  <hr class="section-divider">
+
+  <h2>Page Overview</h2>
+
+  <div class="section-intro">
+    The modeling page trained several approaches for predicting FinalGrade. This page compares those models using both training/cross-validation evidence and held-out testing results. The goal is not simply to find the lowest error; the final recommendation also considers stability, overfitting risk, and interpretability.
+  </div>
+
+  <div class="takeaway-box">
+    <b>Included in this page:</b> Model ranking • Testing RMSE • R-squared • MAE • Train/test gap • Hyperparameters • Variable importance • Actual vs. predicted review
+  </div>
+<div id="best-model-summary" class="section level2">
+<h2>1. Best Model Summary</h2>
+<div class="model-highlight-card results-hero-card">
+  <div class="model-badge">RECOMMENDED MODEL</div>
+  <h3 class="model-title">Gradient Boosted Trees</h3>
+  <p class="model-subtitle">
+    This model produced the lowest testing RMSE among the models evaluated on the held-out test set.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Testing RMSE</span>
+      <span class="metric-value">5.012</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing R-Squared</span>
+      <span class="metric-value">0.765</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing MAE</span>
+      <span class="metric-value">2.826</span>
+    </div>
+  </div>
+</div>
+<p>The recommended model is selected primarily by testing RMSE because
+RMSE penalizes larger prediction errors. R-squared and MAE are included
+to provide additional context for explanatory strength and average
+grade-point error.</p>
+</div>
+<div id="model-ranking" class="section level2">
+<h2>2. Model Ranking</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:center;">
+Rank
+</th>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Recommendation Role
+</th>
+<th style="text-align:right;">
+Training RMSE
+</th>
+<th style="text-align:right;">
+Testing RMSE
+</th>
+<th style="text-align:right;">
+RMSE Gap
+</th>
+<th style="text-align:right;">
+Testing R-Squared
+</th>
+<th style="text-align:right;">
+Testing MAE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">
+1
+</td>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:left;">
+Recommended final model
+</td>
+<td style="text-align:right;">
+4.360
+</td>
+<td style="text-align:right;">
+5.012
+</td>
+<td style="text-align:right;">
+0.652
+</td>
+<td style="text-align:right;">
+0.765
+</td>
+<td style="text-align:right;">
+2.826
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+2
+</td>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+2.568
+</td>
+<td style="text-align:right;">
+5.264
+</td>
+<td style="text-align:right;">
+2.695
+</td>
+<td style="text-align:right;">
+0.740
+</td>
+<td style="text-align:right;">
+2.886
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+3
+</td>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+4.815
+</td>
+<td style="text-align:right;">
+5.879
+</td>
+<td style="text-align:right;">
+1.064
+</td>
+<td style="text-align:right;">
+0.676
+</td>
+<td style="text-align:right;">
+2.815
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+4
+</td>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+4.981
+</td>
+<td style="text-align:right;">
+5.907
+</td>
+<td style="text-align:right;">
+0.926
+</td>
+<td style="text-align:right;">
+0.673
+</td>
+<td style="text-align:right;">
+3.051
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+5.821
+</td>
+<td style="text-align:right;">
+6.212
+</td>
+<td style="text-align:right;">
+0.391
+</td>
+<td style="text-align:right;">
+0.638
+</td>
+<td style="text-align:right;">
+3.386
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+6
+</td>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+4.240
+</td>
+<td style="text-align:right;">
+6.596
+</td>
+<td style="text-align:right;">
+2.356
+</td>
+<td style="text-align:right;">
+0.592
+</td>
+<td style="text-align:right;">
+2.616
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+7
+</td>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+5.835
+</td>
+<td style="text-align:right;">
+9.593
+</td>
+<td style="text-align:right;">
+3.758
+</td>
+<td style="text-align:right;">
+0.138
+</td>
+<td style="text-align:right;">
+4.151
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+8
+</td>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Reference only
+</td>
+<td style="text-align:right;">
+10.111
+</td>
+<td style="text-align:right;">
+10.331
+</td>
+<td style="text-align:right;">
+0.220
+</td>
+<td style="text-align:right;">
+0.000
+</td>
+<td style="text-align:right;">
+7.055
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_results_files/figure-html/05-model-ranking-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="traintest-error-gap" class="section level2">
+<h2>3. Train/Test Error Gap</h2>
+<p>A strong testing result is more useful when it is reasonably close to
+training performance. Large train/test gaps can indicate overfitting,
+especially when training error is much lower than testing error.</p>
+<p><img src="student_retention_results_files/figure-html/06-train-test-gap-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="cross-validation-results" class="section level2">
+<h2>4. Cross-Validation Results</h2>
+<p>Cross-validation estimates model performance during training. It is
+useful for tuning and model comparison before the held-out testing set
+is used.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+R-Squared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:right;">
+4.745
+</td>
+<td style="text-align:right;">
+0.779
+</td>
+<td style="text-align:right;">
+2.829
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:right;">
+4.805
+</td>
+<td style="text-align:right;">
+0.779
+</td>
+<td style="text-align:right;">
+2.888
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:right;">
+4.841
+</td>
+<td style="text-align:right;">
+0.770
+</td>
+<td style="text-align:right;">
+2.914
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:right;">
+4.941
+</td>
+<td style="text-align:right;">
+0.762
+</td>
+<td style="text-align:right;">
+2.752
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:right;">
+5.504
+</td>
+<td style="text-align:right;">
+0.705
+</td>
+<td style="text-align:right;">
+3.128
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:right;">
+6.019
+</td>
+<td style="text-align:right;">
+0.676
+</td>
+<td style="text-align:right;">
+3.456
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_results_files/figure-html/07-cv-results-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="selected-hyperparameters" class="section level2">
+<h2>5. Selected Hyperparameters</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Selected Settings
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Training-set mean FinalGrade
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:left;">
+intercept = TRUE
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:left;">
+alpha = 1; lambda = 0.372759372031494
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+mgcv::gam with REML smoothing
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:left;">
+mtry = 8; splitrule = 1; min.node.size = 5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:left;">
+n.trees = 200; interaction.depth = 3; shrinkage = 0.05; n.minobsinnode =
+10
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:left;">
+sigma = 0.005; C = 1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:left;">
+size = 5; decay = 0.01
+</td>
+</tr>
+</tbody>
+</table>
+<p>The selected settings were produced during the modeling workflow. GAM
+is listed separately because it was fit directly with
+<code>mgcv::gam()</code> rather than through
+<code>caret::train()</code>.</p>
+</div>
+<div id="actual-vs.-predicted-results" class="section level2">
+<h2>6. Actual vs. Predicted Results</h2>
+<p>The plot below compares the best model’s predictions against actual
+FinalGrade values in the testing set. Points closer to the diagonal line
+represent more accurate predictions.</p>
+<p><img src="student_retention_results_files/figure-html/09-actual-vs-predicted-plot-1.png" alt="" width="74%" style="display: block; margin: auto;" /></p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Metric
+</th>
+<th style="text-align:right;">
+Value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Median Absolute Error
+</td>
+<td style="text-align:right;">
+2.049
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Mean Absolute Error
+</td>
+<td style="text-align:right;">
+2.826
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Error 75th Percentile
+</td>
+<td style="text-align:right;">
+3.531
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Error 90th Percentile
+</td>
+<td style="text-align:right;">
+5.804
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="residual-review" class="section level2">
+<h2>7. Residual Review</h2>
+<p>Residuals show how far predictions are from the actual final grade. A
+residual near zero means the prediction was close. A wider spread means
+the model is less consistent for some students. Extreme residuals are
+capped in the visual so the main pattern remains readable.</p>
+<p><img src="student_retention_results_files/figure-html/10-residual-plot-1.png" alt="" width="76%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="variable-importance" class="section level2">
+<h2>8. Variable Importance</h2>
+<p>Variable importance helps explain which predictors the model families
+relied on most. Because different algorithms calculate importance
+differently, the table below uses an aggregate view across the models
+where importance was available.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:center;">
+Aggregate Rank
+</th>
+<th style="text-align:left;">
+Variable
+</th>
+<th style="text-align:center;">
+Models Available
+</th>
+<th style="text-align:right;">
+Mean Rank
+</th>
+<th style="text-align:right;">
+Mean Importance
+</th>
+<th style="text-align:center;">
+Best Rank
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">
+1
+</td>
+<td style="text-align:left;">
+Final Exam Grade
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+2.8
+</td>
+<td style="text-align:right;">
+87.514
+</td>
+<td style="text-align:center;">
+1
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+2
+</td>
+<td style="text-align:left;">
+Major: Medicine
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+8.6
+</td>
+<td style="text-align:right;">
+7.688
+</td>
+<td style="text-align:center;">
+2
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+3
+</td>
+<td style="text-align:left;">
+Major: Computer Science
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+8.8
+</td>
+<td style="text-align:right;">
+16.615
+</td>
+<td style="text-align:center;">
+3
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+4
+</td>
+<td style="text-align:left;">
+Major: Civil Engineering
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+9.8
+</td>
+<td style="text-align:right;">
+16.427
+</td>
+<td style="text-align:center;">
+4
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:left;">
+Semester: 10
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+12.4
+</td>
+<td style="text-align:right;">
+7.958
+</td>
+<td style="text-align:center;">
+6
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+6
+</td>
+<td style="text-align:left;">
+Major: Design
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+16.0
+</td>
+<td style="text-align:right;">
+11.733
+</td>
+<td style="text-align:center;">
+6
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+7
+</td>
+<td style="text-align:left;">
+Semester: 5
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+16.2
+</td>
+<td style="text-align:right;">
+15.000
+</td>
+<td style="text-align:center;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+8
+</td>
+<td style="text-align:left;">
+First Part Grade
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+16.4
+</td>
+<td style="text-align:right;">
+8.474
+</td>
+<td style="text-align:center;">
+3
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+9
+</td>
+<td style="text-align:left;">
+Semester: 8
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+17.6
+</td>
+<td style="text-align:right;">
+5.432
+</td>
+<td style="text-align:center;">
+10
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+10
+</td>
+<td style="text-align:left;">
+Second Part Grade
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+17.8
+</td>
+<td style="text-align:right;">
+9.939
+</td>
+<td style="text-align:center;">
+2
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+11
+</td>
+<td style="text-align:left;">
+Semester: 9
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+18.4
+</td>
+<td style="text-align:right;">
+2.609
+</td>
+<td style="text-align:center;">
+11
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+12
+</td>
+<td style="text-align:left;">
+Major: Bioengineering
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+21.0
+</td>
+<td style="text-align:right;">
+4.801
+</td>
+<td style="text-align:center;">
+14
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+13
+</td>
+<td style="text-align:left;">
+Semester: 4
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+21.4
+</td>
+<td style="text-align:right;">
+1.493
+</td>
+<td style="text-align:center;">
+6
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+14
+</td>
+<td style="text-align:left;">
+Major: Graphic Design
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+21.6
+</td>
+<td style="text-align:right;">
+3.486
+</td>
+<td style="text-align:center;">
+9
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+15
+</td>
+<td style="text-align:left;">
+Semester: 6
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+22.2
+</td>
+<td style="text-align:right;">
+2.031
+</td>
+<td style="text-align:center;">
+5
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_results_files/figure-html/11-variable-importance-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+<div class="takeaway-box">
+<p><b>Interpretation:</b> Grade-related predictors are expected to rank
+highly because the outcome is final course performance. Attendance,
+financial, and support-service variables are still useful because they
+connect predictions to possible student-support actions.</p>
+</div>
+</div>
+<div id="recommendation" class="section level2">
+<h2>9. Recommendation</h2>
+<p>The best model by testing RMSE is <strong>Gradient Boosted
+Trees</strong>. It provides the strongest holdout performance in this
+workflow. However, model selection should not rely on one metric alone.
+A practical recommendation should also consider train/test stability,
+interpretability, and whether the model can be explained to advisors or
+student-success staff.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Question
+</th>
+<th style="text-align:left;">
+Recommendation
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Which model had the lowest testing error?
+</td>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Which metric drove the main ranking?
+</td>
+<td style="text-align:left;">
+Testing RMSE
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Why include MAE?
+</td>
+<td style="text-align:left;">
+MAE is easier to explain as average grade-point error.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Why compare train and test performance?
+</td>
+<td style="text-align:left;">
+Large gaps can indicate overfitting.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Why review variable importance?
+</td>
+<td style="text-align:left;">
+It helps connect prediction performance to practical support decisions.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+What should happen before production use?
+</td>
+<td style="text-align:left;">
+Validate the model on newer terms, review anomalies, and align
+interventions with advising policy.
+</td>
+</tr>
+</tbody>
+</table>
+  <div class="grid-3">
+
+    <div class="card">
+      <h4>Recommended Model</h4>
+      <p>
+        Gradient Boosted Trees produced the lowest testing RMSE in the saved modeling workflow.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Model Stability</h4>
+      <p>
+        Train/test error gaps help identify whether a model is likely overfitting or generalizing reasonably well.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Practical Use</h4>
+      <p>
+        Predicted grades can be translated into support-review segments for advising, tutoring, and follow-up.
+      </p>
+    </div>
+
+  </div>
+  <div class="takeaway-box">
+    <b>Next File:</b> student_retention_insights.Rmd will translate the model results into final conclusions, risks, limitations, and student-support recommendations.
+  </div>
+
+  <div class="page-nav bottom-nav">
+    <a href="student_retention_modeling.html" class="nav-pill nav-back">← Back: Modeling</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_insights.html" class="nav-pill nav-next">Next: Insights →</a>
+  </div>
+
+  </div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

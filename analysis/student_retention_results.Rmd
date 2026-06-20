@@ -1,0 +1,902 @@
+---
+title: "Student Retention Results | Kevin Cauley"
+
+output:
+  html_document:
+    always_allow_html: true
+    self_contained: false
+    toc: false
+    theme: null
+    highlight: null
+    fig_caption: true
+    css: assets/styles.css
+    includes:
+      in_header: ../docs/assets/header.html
+
+number_sections: false
+---
+
+```{r 00-setup, include=FALSE}
+library(here)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+PLOT_SUBFOLDER <- "results"
+
+dir.create(here::here("docs"), showWarnings = FALSE, recursive = TRUE)
+dir.create(here::here("docs", "figures"), showWarnings = FALSE, recursive = TRUE)
+dir.create(here::here("docs", "figures", PLOT_SUBFOLDER), showWarnings = FALSE, recursive = TRUE)
+
+save_plot <- function(plot_object, filename, width = 8.8, height = 5.4, dpi = 300) {
+  plot_path <- here::here("docs", "figures", PLOT_SUBFOLDER, filename)
+
+  ggplot2::ggsave(
+    filename = plot_path,
+    plot = plot_object,
+    width = width,
+    height = height,
+    dpi = dpi,
+    bg = "white"
+  )
+}
+
+cat("Using plot folder:", PLOT_SUBFOLDER, "\n")
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "78%",
+  fig.retina = 2,
+  fig.width = 7.0,
+  fig.height = 4.0,
+  dpi = 220,
+  cache = FALSE,
+  dev = "png"
+)
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(caret)
+library(tibble)
+
+wrap_text <- function(x, width = 58) {
+  stringr::str_wrap(x, width = width)
+}
+
+theme_student <- function(base_size = 10.5) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.title = element_text(
+        face = "bold",
+        size = base_size + 3,
+        color = "#1F2D3D",
+        lineheight = 1.08,
+        margin = margin(b = 5)
+      ),
+      plot.subtitle = element_text(
+        size = base_size,
+        color = "#617284",
+        lineheight = 1.15,
+        margin = margin(b = 10)
+      ),
+      axis.title = element_text(
+        face = "bold",
+        color = "#1F2D3D",
+        size = base_size + 0.5
+      ),
+      axis.text = element_text(
+        color = "#4A5568",
+        size = base_size - 0.5
+      ),
+      panel.grid.major = element_line(color = "#E8EEF5", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(
+        face = "bold",
+        color = "#1F2D3D",
+        size = base_size
+      ),
+      strip.background = element_rect(fill = "#EEF7FF", color = NA),
+      plot.margin = margin(12, 16, 12, 16),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold")
+    )
+}
+
+student_blue <- "#3A86FF"
+student_teal <- "#2A9D8F"
+student_navy <- "#17324D"
+student_gold <- "#F2B84B"
+student_red <- "#D95D5D"
+student_gray <- "#8A97A6"
+```
+
+```{r 01-load-modeling-objects}
+modeling_object_path <- here::here("data", "processed", "student_retention_modeling_objects.rds")
+
+if (!file.exists(modeling_object_path)) {
+  stop("Missing data/processed/student_retention_modeling_objects.rds. Render student_retention_modeling.Rmd before rendering this page.")
+}
+
+modeling_objects <- readRDS(modeling_object_path)
+
+modeling_df <- modeling_objects$modeling_df
+train_df <- modeling_objects$train_df
+test_df <- modeling_objects$test_df
+model_list <- modeling_objects$model_list
+cv_summary <- modeling_objects$cv_summary
+model_holdout_metrics <- modeling_objects$model_holdout_metrics
+model_train_metrics <- modeling_objects$model_train_metrics
+model_test_metrics <- modeling_objects$model_test_metrics
+best_holdout_model <- modeling_objects$best_holdout_model
+encoded_predictor_count <- modeling_objects$encoded_predictor_count
+hidden_nodes_requested <- modeling_objects$hidden_nodes_requested
+hidden_nodes_used <- modeling_objects$hidden_nodes_used
+```
+
+```{r 02-helper-functions}
+calc_r2 <- function(actual, predicted) {
+  ss_res <- sum((actual - predicted)^2, na.rm = TRUE)
+  ss_tot <- sum((actual - mean(actual, na.rm = TRUE))^2, na.rm = TRUE)
+
+  if (ss_tot == 0) {
+    return(NA_real_)
+  }
+
+  1 - (ss_res / ss_tot)
+}
+
+regression_metrics <- function(actual, predicted) {
+  tibble(
+    RMSE = sqrt(mean((actual - predicted)^2, na.rm = TRUE)),
+    Rsquared = calc_r2(actual, predicted),
+    MAE = mean(abs(actual - predicted), na.rm = TRUE)
+  )
+}
+
+safe_predict_model <- function(model_name, new_data) {
+
+  if (model_name == "Baseline Mean") {
+    return(rep(model_list$baseline_mean, nrow(new_data)))
+  }
+
+  if (model_name == "Multiple Linear Regression") {
+    return(as.numeric(predict(model_list$mlr_model, newdata = new_data)))
+  }
+
+  if (model_name == "LASSO Regression") {
+    return(as.numeric(predict(model_list$lasso_model, newdata = new_data)))
+  }
+
+  if (model_name == "GAM") {
+    return(as.numeric(predict(model_list$gam_model, newdata = new_data)))
+  }
+
+  if (model_name == "Random Forest") {
+    return(as.numeric(predict(model_list$rf_model, newdata = new_data)))
+  }
+
+  if (model_name == "Gradient Boosted Trees") {
+    return(as.numeric(predict(model_list$gbm_model, newdata = new_data)))
+  }
+
+  if (model_name == "SVM Radial") {
+    return(as.numeric(predict(model_list$svm_model, newdata = new_data)))
+  }
+
+  if (model_name == "Neural Network") {
+    return(as.numeric(predict(model_list$nnet_model, newdata = new_data)))
+  }
+
+  stop(paste("Unknown model name:", model_name))
+}
+
+extract_best_tune <- function(model_object) {
+  if (!is.null(model_object$bestTune)) {
+    paste(names(model_object$bestTune), model_object$bestTune[1, ], sep = " = ", collapse = "; ")
+  } else {
+    "No tuned hyperparameters"
+  }
+}
+
+safe_varimp <- function(model_name, model_object) {
+
+  output <- tryCatch({
+
+    importance_object <- caret::varImp(model_object, scale = TRUE)
+    importance_df <- importance_object$importance %>%
+      as.data.frame() %>%
+      rownames_to_column("Variable")
+
+    score_col <- setdiff(names(importance_df), "Variable")[1]
+
+    importance_df %>%
+      transmute(
+        Model = model_name,
+        Variable = Variable,
+        Importance = .data[[score_col]]
+      ) %>%
+      arrange(desc(Importance)) %>%
+      mutate(Rank = row_number())
+
+  }, error = function(e) {
+
+    tibble(
+      Model = character(),
+      Variable = character(),
+      Importance = numeric(),
+      Rank = integer()
+    )
+
+  })
+
+  output
+}
+
+clean_variable_name <- function(x) {
+  x %>%
+    str_replace_all("`", "") %>%
+    str_replace("^Major", "Major: ") %>%
+    str_replace("^Semester", "Semester: ") %>%
+    str_replace("^EnrollmentStatus", "Enrollment Status: ") %>%
+    str_replace("^Gender", "Gender: ") %>%
+    str_replace("^Origin", "Origin: ") %>%
+    str_replace("FirstPartGrade", "First Part Grade") %>%
+    str_replace("SecondPartGrade", "Second Part Grade") %>%
+    str_replace("FinalExamGrade", "Final Exam Grade") %>%
+    str_replace("FinalGrade", "Final Grade") %>%
+    str_replace("AverageAbsences", "Average Absences") %>%
+    str_replace("ScholarshipPercent", "Scholarship Percent") %>%
+    str_replace("PastDueBalance", "Past-Due Balance") %>%
+    str_replace("NumAdvisorySessions", "Advisory Sessions") %>%
+    str_replace("NumCounselingSessions", "Counseling Sessions") %>%
+    str_replace("NumMathTutoringSessions", "Math Tutoring Sessions") %>%
+    str_replace("NumFormativePlanSessions", "Formative Plan Sessions") %>%
+    str_replace("CumulativeTeacherEval", "Teacher Evaluation Average") %>%
+    str_replace("HonorFaults", "Honor Faults") %>%
+    str_squish()
+}
+```
+
+```{r 03-prepare-results}
+model_test_metrics <- model_test_metrics %>%
+  mutate(
+    Data = "Testing",
+    Model = as.character(Model)
+  ) %>%
+  arrange(RMSE)
+
+model_train_metrics <- model_train_metrics %>%
+  mutate(
+    Data = "Training",
+    Model = as.character(Model)
+  )
+
+model_holdout_metrics <- bind_rows(model_train_metrics, model_test_metrics)
+
+performance_wide <- model_holdout_metrics %>%
+  select(Model, Data, RMSE, Rsquared, MAE) %>%
+  pivot_wider(
+    names_from = Data,
+    values_from = c(RMSE, Rsquared, MAE),
+    names_glue = "{Data}_{.value}"
+  ) %>%
+  mutate(
+    RMSE_Gap = Testing_RMSE - Training_RMSE,
+    Abs_RMSE_Gap = abs(RMSE_Gap)
+  ) %>%
+  arrange(Testing_RMSE)
+
+best_model_name <- performance_wide$Model[1]
+best_model_test_rmse <- performance_wide$Testing_RMSE[1]
+best_model_test_r2 <- performance_wide$Testing_Rsquared[1]
+best_model_test_mae <- performance_wide$Testing_MAE[1]
+
+best_predictions_df <- tibble(
+  Actual = test_df$FinalGrade,
+  Predicted = safe_predict_model(best_model_name, test_df)
+) %>%
+  mutate(
+    Residual = Actual - Predicted,
+    Abs_Error = abs(Residual),
+    RiskSegment = if_else(Predicted < 70, "Predicted Below 70", "Predicted 70 or Higher")
+  )
+
+residual_bounds <- quantile(best_predictions_df$Residual, probs = c(0.01, 0.99), na.rm = TRUE)
+residual_lower <- min(residual_bounds[1], -10, na.rm = TRUE)
+residual_upper <- max(residual_bounds[2], 10, na.rm = TRUE)
+
+hyperparameter_table <- tibble(
+  Model = c(
+    "Baseline Mean",
+    "Multiple Linear Regression",
+    "LASSO Regression",
+    "GAM",
+    "Random Forest",
+    "Gradient Boosted Trees",
+    "SVM Radial",
+    "Neural Network"
+  ),
+  Selected_Settings = c(
+    "Training-set mean FinalGrade",
+    extract_best_tune(model_list$mlr_model),
+    extract_best_tune(model_list$lasso_model),
+    "mgcv::gam with REML smoothing",
+    extract_best_tune(model_list$rf_model),
+    extract_best_tune(model_list$gbm_model),
+    extract_best_tune(model_list$svm_model),
+    extract_best_tune(model_list$nnet_model)
+  )
+)
+
+model_ranking <- performance_wide %>%
+  mutate(
+    Rank = row_number(),
+    Recommendation_Role = case_when(
+      Rank == 1 ~ "Recommended final model",
+      Testing_RMSE <= Testing_RMSE[1] * 1.05 ~ "Close alternative",
+      Model == "Baseline Mean" ~ "Reference only",
+      TRUE ~ "Secondary comparison"
+    )
+  ) %>%
+  select(
+    Rank,
+    Model,
+    Recommendation_Role,
+    Training_RMSE,
+    Testing_RMSE,
+    RMSE_Gap,
+    Testing_Rsquared,
+    Testing_MAE
+  )
+```
+
+```{r 04-variable-importance}
+importance_models <- list(
+  "Multiple Linear Regression" = model_list$mlr_model,
+  "LASSO Regression" = model_list$lasso_model,
+  "Random Forest" = model_list$rf_model,
+  "Gradient Boosted Trees" = model_list$gbm_model,
+  "SVM Radial" = model_list$svm_model,
+  "Neural Network" = model_list$nnet_model
+)
+
+all_importance <- bind_rows(
+  lapply(names(importance_models), function(model_name) {
+    safe_varimp(model_name, importance_models[[model_name]])
+  })
+) %>%
+  mutate(
+    Variable_Clean = clean_variable_name(Variable)
+  )
+
+importance_summary <- all_importance %>%
+  group_by(Variable_Clean) %>%
+  summarise(
+    Models_Available = n_distinct(Model),
+    Mean_Importance = mean(Importance, na.rm = TRUE),
+    Mean_Rank = mean(Rank, na.rm = TRUE),
+    Best_Rank = min(Rank, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Mean_Rank, desc(Mean_Importance)) %>%
+  mutate(Aggregate_Rank = row_number())
+
+top_importance <- importance_summary %>%
+  slice_head(n = 15)
+
+if (nrow(all_importance) == 0) {
+  top_importance <- tibble(
+    Variable_Clean = "Variable importance unavailable",
+    Models_Available = NA_integer_,
+    Mean_Importance = NA_real_,
+    Mean_Rank = NA_real_,
+    Best_Rank = NA_real_,
+    Aggregate_Rank = NA_integer_
+  )
+}
+```
+
+```{=html}
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • `r format(Sys.Date(), '%B %d, %Y')`
+    </p>
+    
+    <h1 class="hero-title">Model Results & Comparison</h1>
+
+    <p class="hero-subtitle">
+      This page compares the trained models using cross-validation results, holdout testing performance, train/test error gaps, selected hyperparameters, variable importance, and final model ranking.
+    </p>
+
+  </div>
+  
+  <div class="page-nav">
+  <a href="student_retention_modeling.html" class="nav-pill nav-back">← Back: Modeling</a>
+  <a href="index.html" class="nav-pill nav-home">Home</a>
+  <a href="student_retention_insights.html" class="nav-pill nav-next">Next: Insights →</a>
+  </div>
+
+  <hr class="section-divider">
+
+  <h2>Page Overview</h2>
+
+  <div class="section-intro">
+    The modeling page trained several approaches for predicting FinalGrade. This page compares those models using both training/cross-validation evidence and held-out testing results. The goal is not simply to find the lowest error; the final recommendation also considers stability, overfitting risk, and interpretability.
+  </div>
+
+  <div class="takeaway-box">
+    <b>Included in this page:</b> Model ranking • Testing RMSE • R-squared • MAE • Train/test gap • Hyperparameters • Variable importance • Actual vs. predicted review
+  </div>
+```
+
+## 1. Best Model Summary
+
+```{=html}
+<div class="model-highlight-card results-hero-card">
+  <div class="model-badge">RECOMMENDED MODEL</div>
+  <h3 class="model-title">`r best_model_name`</h3>
+  <p class="model-subtitle">
+    This model produced the lowest testing RMSE among the models evaluated on the held-out test set.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Testing RMSE</span>
+      <span class="metric-value">`r number(best_model_test_rmse, accuracy = 0.001)`</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing R-Squared</span>
+      <span class="metric-value">`r number(best_model_test_r2, accuracy = 0.001)`</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing MAE</span>
+      <span class="metric-value">`r number(best_model_test_mae, accuracy = 0.001)`</span>
+    </div>
+  </div>
+</div>
+```
+
+The recommended model is selected primarily by testing RMSE because RMSE penalizes larger prediction errors. R-squared and MAE are included to provide additional context for explanatory strength and average grade-point error.
+
+## 2. Model Ranking
+
+```{r 05-model-ranking-table}
+model_ranking_display <- model_ranking %>%
+  mutate(
+    Training_RMSE = number(Training_RMSE, accuracy = 0.001),
+    Testing_RMSE = number(Testing_RMSE, accuracy = 0.001),
+    RMSE_Gap = number(RMSE_Gap, accuracy = 0.001),
+    Testing_Rsquared = number(Testing_Rsquared, accuracy = 0.001),
+    Testing_MAE = number(Testing_MAE, accuracy = 0.001)
+  ) %>%
+  rename(
+    `Recommendation Role` = Recommendation_Role,
+    `Training RMSE` = Training_RMSE,
+    `Testing RMSE` = Testing_RMSE,
+    `RMSE Gap` = RMSE_Gap,
+    `Testing R-Squared` = Testing_Rsquared,
+    `Testing MAE` = Testing_MAE
+  )
+
+kable(model_ranking_display, align = "cllrrrrr") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r 05-model-ranking-plot, fig.width=7.2, fig.height=4.2, out.width="78%"}
+ranking_plot_df <- model_ranking %>%
+  mutate(
+    Model = fct_reorder(Model, Testing_RMSE),
+    Label = number(Testing_RMSE, accuracy = 0.001)
+  )
+
+p <- ggplot(ranking_plot_df, aes(x = Testing_RMSE, y = fct_rev(Model))) +
+  geom_col(fill = student_teal, width = 0.62, alpha = 0.9) +
+  geom_text(
+    aes(label = Label),
+    hjust = -0.10,
+    size = 3.2,
+    fontface = "bold",
+    color = student_navy
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.22))) +
+  coord_cartesian(clip = "off") +
+  labs(
+    title = "Testing RMSE by Model",
+    subtitle = wrap_text("Lower testing RMSE indicates smaller prediction error on held-out student records."),
+    x = "Testing RMSE",
+    y = NULL
+  ) +
+  theme_student(10.2) +
+  theme(
+    plot.margin = margin(18, 34, 16, 18)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "model_ranking_testing_rmse.png",
+  width = 8.8,
+  height = 5.2
+)
+```
+
+## 3. Train/Test Error Gap
+
+A strong testing result is more useful when it is reasonably close to training performance. Large train/test gaps can indicate overfitting, especially when training error is much lower than testing error.
+
+```{r 06-train-test-gap-plot, fig.width=7.2, fig.height=4.3, out.width="78%"}
+gap_plot_df <- model_holdout_metrics %>%
+  mutate(
+    Model = factor(Model, levels = performance_wide$Model),
+    Data = factor(Data, levels = c("Training", "Testing"))
+  )
+
+p <- ggplot(gap_plot_df, aes(x = RMSE, y = fct_rev(Model), fill = Data)) +
+  geom_col(position = position_dodge(width = 0.72), width = 0.62, alpha = 0.92) +
+  scale_fill_manual(values = c("Training" = student_blue, "Testing" = student_teal)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.18))) +
+  coord_cartesian(clip = "off") +
+  labs(
+    title = "Training vs. Testing RMSE",
+    subtitle = wrap_text("This comparison shows whether model error stays reasonable when moved from training data to unseen testing data."),
+    x = "RMSE",
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_student(10.2) +
+  theme(
+    plot.margin = margin(18, 30, 16, 18)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "training_vs_testing_rmse_results.png",
+  width = 8.8,
+  height = 5.2
+)
+```
+
+## 4. Cross-Validation Results
+
+Cross-validation estimates model performance during training. It is useful for tuning and model comparison before the held-out testing set is used.
+
+```{r 07-cv-results-table}
+cv_display <- cv_summary %>%
+  arrange(RMSE) %>%
+  mutate(
+    RMSE = number(RMSE, accuracy = 0.001),
+    Rsquared = number(Rsquared, accuracy = 0.001),
+    MAE = number(MAE, accuracy = 0.001)
+  ) %>%
+  rename(
+    `R-Squared` = Rsquared
+  )
+
+kable(cv_display, align = "lrrr") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r 07-cv-results-plot, fig.width=7.2, fig.height=4.1, out.width="78%"}
+cv_plot_df <- cv_summary %>%
+  arrange(RMSE) %>%
+  mutate(
+    Model = fct_reorder(Model, RMSE),
+    Label = number(RMSE, accuracy = 0.001)
+  )
+
+p <- ggplot(cv_plot_df, aes(x = RMSE, y = fct_rev(Model))) +
+  geom_col(fill = student_blue, width = 0.62, alpha = 0.88) +
+  geom_text(
+    aes(label = Label),
+    hjust = -0.10,
+    size = 3.2,
+    fontface = "bold",
+    color = student_navy
+  ) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.22))) +
+  coord_cartesian(clip = "off") +
+  labs(
+    title = "Cross-Validation RMSE by Model",
+    subtitle = wrap_text("Cross-validation was used during training to tune model settings and estimate training-side performance."),
+    x = "Cross-Validation RMSE",
+    y = NULL
+  ) +
+  theme_student(10.2) +
+  theme(
+    plot.margin = margin(18, 34, 16, 18)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "cross_validation_rmse_results.png",
+  width = 8.8,
+  height = 5.2
+)
+```
+
+## 5. Selected Hyperparameters
+
+```{r 08-hyperparameter-table}
+hyperparameter_display <- hyperparameter_table %>%
+  rename(
+    `Selected Settings` = Selected_Settings
+  )
+
+kable(hyperparameter_display, align = "ll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+The selected settings were produced during the modeling workflow. GAM is listed separately because it was fit directly with `mgcv::gam()` rather than through `caret::train()`.
+
+## 6. Actual vs. Predicted Results
+
+The plot below compares the best model’s predictions against actual FinalGrade values in the testing set. Points closer to the diagonal line represent more accurate predictions.
+
+```{r 09-actual-vs-predicted-plot, fig.width=6.5, fig.height=4.6, out.width="74%"}
+p <- ggplot(best_predictions_df, aes(x = Actual, y = Predicted, color = RiskSegment)) +
+  geom_point(alpha = 0.45, size = 1.5) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", linewidth = 0.8, color = student_navy) +
+  scale_color_manual(values = c("Predicted 70 or Higher" = student_teal, "Predicted Below 70" = student_red)) +
+  coord_cartesian(xlim = c(0, 105), ylim = c(0, 105)) +
+  labs(
+    title = paste("Actual vs. Predicted FinalGrade:", best_model_name),
+    subtitle = wrap_text("The dashed line represents perfect prediction. Points below 70 are useful for support-review planning."),
+    x = "Actual FinalGrade",
+    y = "Predicted FinalGrade",
+    color = NULL
+  ) +
+  theme_student(10.2)
+
+print(p)
+
+save_plot(
+  p,
+  "actual_vs_predicted_final_grade.png",
+  width = 7.8,
+  height = 5.3
+)
+```
+
+```{r 09-prediction-error-summary}
+prediction_error_summary <- best_predictions_df %>%
+  summarise(
+    Median_Absolute_Error = median(Abs_Error, na.rm = TRUE),
+    Mean_Absolute_Error = mean(Abs_Error, na.rm = TRUE),
+    Error_75th_Percentile = quantile(Abs_Error, 0.75, na.rm = TRUE),
+    Error_90th_Percentile = quantile(Abs_Error, 0.90, na.rm = TRUE)
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Metric",
+    values_to = "Value"
+  ) %>%
+  mutate(
+    Metric = str_replace_all(Metric, "_", " "),
+    Value = number(Value, accuracy = 0.001)
+  )
+
+kable(prediction_error_summary, align = "lr") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 7. Residual Review
+
+Residuals show how far predictions are from the actual final grade. A residual near zero means the prediction was close. A wider spread means the model is less consistent for some students. Extreme residuals are capped in the visual so the main pattern remains readable.
+
+```{r 10-residual-plot, fig.width=6.8, fig.height=4.1, out.width="76%"}
+p <- ggplot(best_predictions_df, aes(x = Predicted, y = Residual)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.8, color = student_navy) +
+  geom_point(alpha = 0.38, size = 1.35, color = student_teal) +
+  coord_cartesian(ylim = c(residual_lower, residual_upper)) +
+  labs(
+    title = "Residuals for the Recommended Model",
+    subtitle = wrap_text("Residuals near zero indicate more accurate predictions. The visual is capped to avoid one extreme record dominating the chart."),
+    x = "Predicted FinalGrade",
+    y = "Residual: Actual - Predicted"
+  ) +
+  theme_student(10.2)
+
+print(p)
+
+save_plot(
+  p,
+  "recommended_model_residuals.png",
+  width = 8.2,
+  height = 5.0
+)
+```
+
+## 8. Variable Importance
+
+Variable importance helps explain which predictors the model families relied on most. Because different algorithms calculate importance differently, the table below uses an aggregate view across the models where importance was available.
+
+```{r 11-variable-importance-table}
+importance_display <- top_importance %>%
+  mutate(
+    Mean_Importance = number(Mean_Importance, accuracy = 0.001),
+    Mean_Rank = number(Mean_Rank, accuracy = 0.1)
+  ) %>%
+  select(
+    Aggregate_Rank,
+    Variable = Variable_Clean,
+    Models_Available,
+    Mean_Rank,
+    Mean_Importance,
+    Best_Rank
+  ) %>%
+  rename(
+    `Aggregate Rank` = Aggregate_Rank,
+    `Models Available` = Models_Available,
+    `Mean Rank` = Mean_Rank,
+    `Mean Importance` = Mean_Importance,
+    `Best Rank` = Best_Rank
+  )
+
+kable(importance_display, align = "clcrrc") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r 11-variable-importance-plot, fig.width=7.2, fig.height=4.4, out.width="78%"}
+if (nrow(all_importance) > 0) {
+
+  top_importance_plot <- top_importance %>%
+    slice_head(n = 12) %>%
+    mutate(
+      Variable_Clean = fct_reorder(Variable_Clean, Mean_Importance),
+      Label = number(Mean_Importance, accuracy = 0.1)
+    )
+
+  p <- ggplot(top_importance_plot, aes(x = Mean_Importance, y = Variable_Clean)) +
+    geom_col(fill = student_gold, width = 0.62, alpha = 0.95) +
+    geom_text(
+      aes(label = Label),
+      hjust = -0.10,
+      size = 3.1,
+      fontface = "bold",
+      color = student_navy
+    ) +
+    scale_x_continuous(expand = expansion(mult = c(0, 0.24))) +
+    coord_cartesian(clip = "off") +
+    labs(
+      title = "Top Predictors by Average Model Importance",
+      subtitle = wrap_text("Importance is averaged across model families where variable importance was available."),
+      x = "Mean Importance",
+      y = NULL
+    ) +
+    theme_student(10.2) +
+    theme(
+      plot.margin = margin(18, 36, 16, 18)
+    )
+
+  print(p)
+
+  save_plot(
+    p,
+    "top_predictors_average_model_importance.png",
+    width = 8.8,
+    height = 5.5
+  )
+
+}
+```
+
+<div class="takeaway-box">
+  <b>Interpretation:</b> Grade-related predictors are expected to rank highly because the outcome is final course performance. Attendance, financial, and support-service variables are still useful because they connect predictions to possible student-support actions.
+</div>
+
+## 9. Recommendation
+
+The best model by testing RMSE is **`r best_model_name`**. It provides the strongest holdout performance in this workflow. However, model selection should not rely on one metric alone. A practical recommendation should also consider train/test stability, interpretability, and whether the model can be explained to advisors or student-success staff.
+
+```{r 12-recommendation-table}
+recommendation_table <- tibble::tribble(
+  ~Question, ~Recommendation,
+  "Which model had the lowest testing error?", best_model_name,
+  "Which metric drove the main ranking?", "Testing RMSE",
+  "Why include MAE?", "MAE is easier to explain as average grade-point error.",
+  "Why compare train and test performance?", "Large gaps can indicate overfitting.",
+  "Why review variable importance?", "It helps connect prediction performance to practical support decisions.",
+  "What should happen before production use?", "Validate the model on newer terms, review anomalies, and align interventions with advising policy."
+)
+
+kable(recommendation_table, align = "ll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+  <div class="grid-3">
+
+    <div class="card">
+      <h4>Recommended Model</h4>
+      <p>
+        `r best_model_name` produced the lowest testing RMSE in the saved modeling workflow.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Model Stability</h4>
+      <p>
+        Train/test error gaps help identify whether a model is likely overfitting or generalizing reasonably well.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Practical Use</h4>
+      <p>
+        Predicted grades can be translated into support-review segments for advising, tutoring, and follow-up.
+      </p>
+    </div>
+
+  </div>
+```
+
+```{r 13-save-results-object}
+results_objects <- list(
+  model_ranking = model_ranking,
+  performance_wide = performance_wide,
+  model_holdout_metrics = model_holdout_metrics,
+  model_train_metrics = model_train_metrics,
+  model_test_metrics = model_test_metrics,
+  best_model_name = best_model_name,
+  best_predictions_df = best_predictions_df,
+  prediction_error_summary = prediction_error_summary,
+  hyperparameter_table = hyperparameter_table,
+  all_importance = all_importance,
+  importance_summary = importance_summary,
+  top_importance = top_importance,
+  recommendation_table = recommendation_table
+)
+
+dir.create(here::here("data", "processed"), showWarnings = FALSE, recursive = TRUE)
+
+saveRDS(results_objects, here::here("data", "processed", "student_retention_results_objects.rds"))
+```
+
+```{=html}
+  <div class="takeaway-box">
+    <b>Next File:</b> student_retention_insights.Rmd will translate the model results into final conclusions, risks, limitations, and student-support recommendations.
+  </div>
+
+  <div class="page-nav bottom-nav">
+    <a href="student_retention_modeling.html" class="nav-pill nav-back">← Back: Modeling</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_insights.html" class="nav-pill nav-next">Next: Insights →</a>
+  </div>
+
+  </div>
+</div>
+```

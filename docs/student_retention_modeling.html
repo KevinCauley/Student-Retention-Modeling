@@ -1,0 +1,1545 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Student Retention Modeling | Kevin Cauley</title>
+
+<script src="student_retention_modeling_files/header-attrs-2.31/header-attrs.js"></script>
+<script src="student_retention_modeling_files/kePrint-0.0.1/kePrint.js"></script>
+<link href="student_retention_modeling_files/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="assets/styles.css?v=20260619" type="text/css" />
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Student Retention Modeling | Kevin
+Cauley</h1>
+
+
+
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • June 19, 2026
+    </p>
+    
+    <h1 class="hero-title">Predictive Modeling Strategy</h1>
+
+    <p class="hero-subtitle">
+      This page builds the regression models used to predict final course grade. The workflow documents the modeling target, train/test split, preprocessing steps, model families, and saved objects used by the results page.
+    </p>
+
+  </div>
+  
+  <div class="page-nav">
+  <a href="student_retention_eda.html" class="nav-pill nav-back">← Back: EDA</a>
+  <a href="index.html" class="nav-pill nav-home">Home</a>
+  <a href="student_retention_results.html" class="nav-pill nav-next">Next: Results →</a>
+  </div>
+
+  <hr class="section-divider">
+
+  <h2>Page Overview</h2>
+
+  <div class="section-intro">
+    The modeling task is to predict FinalGrade using academic, attendance, financial, enrollment, support-service, conduct, and engagement variables. The page trains a baseline model, linear models, regularized regression, a generalized additive model, tree-based models, a support vector machine, and a neural-network approximation.
+  </div>
+
+  <div class="takeaway-box">
+    <b>Included in this page:</b> Target variable • Train/test split • One-hot encoding • Baseline • MLR • LASSO • GAM • Random forest • GBM • SVM • Neural network • Saved model objects
+  </div>
+<div id="modeling-goal" class="section level2">
+<h2>1. Modeling Goal</h2>
+<p>The primary modeling goal is to predict <strong>FinalGrade</strong>,
+a numeric measure of final course performance. The task is regression,
+and the models are evaluated using RMSE, R-squared, and MAE.</p>
+<p>EnrollmentStatus is retained as a predictor and context variable
+rather than treated as the outcome. AcademicRisk is derived from
+FinalGrade and used later to connect predicted performance to support
+planning.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Modeling_Decision
+</th>
+<th style="text-align:left;">
+Choice
+</th>
+<th style="text-align:left;">
+Reason
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Primary outcome
+</td>
+<td style="text-align:left;">
+FinalGrade
+</td>
+<td style="text-align:left;">
+Final course performance is a numeric outcome suitable for regression.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Task type
+</td>
+<td style="text-align:left;">
+Regression
+</td>
+<td style="text-align:left;">
+The outcome is numeric.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Risk context
+</td>
+<td style="text-align:left;">
+AcademicRisk derived from FinalGrade
+</td>
+<td style="text-align:left;">
+Predicted grades can be translated into a support-review segment.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Enrollment status
+</td>
+<td style="text-align:left;">
+Predictor
+</td>
+<td style="text-align:left;">
+EnrollmentStatus provides context but is not modeled as the outcome.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Main comparison metric
+</td>
+<td style="text-align:left;">
+RMSE
+</td>
+<td style="text-align:left;">
+RMSE penalizes larger grade prediction errors.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Secondary metric
+</td>
+<td style="text-align:left;">
+MAE
+</td>
+<td style="text-align:left;">
+MAE reports the average grade-point error.
+</td>
+</tr>
+</tbody>
+</table>
+<div class="model-highlight-card">
+  <div class="model-badge">MODELING FOCUS</div>
+  <h3 class="model-title">Predict final course grade.</h3>
+  <p class="model-subtitle">
+    The model estimates final academic performance. Students with low predicted performance can be reviewed for academic support, advising, tutoring, or financial follow-up.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Outcome</span>
+      <span class="metric-value">FinalGrade</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Task</span>
+      <span class="metric-value">Regression</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Risk Use</span>
+      <span class="metric-value">Support Review</span>
+    </div>
+  </div>
+</div>
+</div>
+<div id="feature-selection" class="section level2">
+<h2>2. Feature Selection</h2>
+<p>The predictors are selected from the cleaned EDA dataset. The model
+includes academic performance, attendance, financial, enrollment,
+student-support, engagement, and conduct indicators.</p>
+<p>Two versions of the model are prepared:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Full performance model:</strong> includes
+FinalExamGrade.</li>
+<li><strong>Early-warning model:</strong> excludes FinalExamGrade
+because a final exam score would usually arrive too late for early
+support decisions.</li>
+</ol>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Feature_Group
+</th>
+<th style="text-align:left;">
+Variables
+</th>
+<th style="text-align:left;">
+Reason
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Academic context
+</td>
+<td style="text-align:left;">
+Semester, Major, EnrollmentStatus
+</td>
+<td style="text-align:left;">
+Course and enrollment context.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Student characteristics
+</td>
+<td style="text-align:left;">
+Gender, Origin
+</td>
+<td style="text-align:left;">
+Student context variables.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Academic progress
+</td>
+<td style="text-align:left;">
+FirstPartGrade, SecondPartGrade, FinalExamGrade
+</td>
+<td style="text-align:left;">
+Course performance components.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Attendance
+</td>
+<td style="text-align:left;">
+AverageAbsences
+</td>
+<td style="text-align:left;">
+Attendance behavior across grading periods.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Online learning
+</td>
+<td style="text-align:left;">
+NumOnlineCourses
+</td>
+<td style="text-align:left;">
+Online course load indicator.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Financial indicators
+</td>
+<td style="text-align:left;">
+ScholarshipPercent, PastDueBalance
+</td>
+<td style="text-align:left;">
+Financial support and financial pressure indicators.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Support services
+</td>
+<td style="text-align:left;">
+Advisory, counseling, tutoring, formative plan sessions
+</td>
+<td style="text-align:left;">
+Student-support usage variables.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Engagement/course experience
+</td>
+<td style="text-align:left;">
+CumulativeTeacherEval
+</td>
+<td style="text-align:left;">
+Average of teacher evaluation items.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Conduct
+</td>
+<td style="text-align:left;">
+HonorFaults
+</td>
+<td style="text-align:left;">
+Conduct-related context.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="data-split-and-reproducibility" class="section level2">
+<h2>3. Data Split and Reproducibility</h2>
+<p>The data is split into an 80% training set and a 20% testing set. The
+training set is used for model fitting and cross-validation. The testing
+set is held out for final evaluation.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Dataset
+</th>
+<th style="text-align:center;">
+Records
+</th>
+<th style="text-align:center;">
+Percent
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Full modeling dataset
+</td>
+<td style="text-align:center;">
+6,597
+</td>
+<td style="text-align:center;">
+100.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Training set
+</td>
+<td style="text-align:center;">
+5,279
+</td>
+<td style="text-align:center;">
+80.0%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Testing set
+</td>
+<td style="text-align:center;">
+1,318
+</td>
+<td style="text-align:center;">
+20.0%
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_modeling_files/figure-html/06-split-plot-1.png" alt="" width="76%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="preprocessing-for-modeling" class="section level2">
+<h2>4. Preprocessing for Modeling</h2>
+<p>The EDA page kept variables in their original units. Modeling
+requires additional preprocessing because categorical variables need
+numeric representation and some algorithms are sensitive to scale.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Step
+</th>
+<th style="text-align:left;">
+Applied_To
+</th>
+<th style="text-align:left;">
+Reason
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+One-hot encoding
+</td>
+<td style="text-align:left;">
+Categorical predictors
+</td>
+<td style="text-align:left;">
+Many algorithms require numeric input.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Centering
+</td>
+<td style="text-align:left;">
+Selected models
+</td>
+<td style="text-align:left;">
+Keeps numeric predictors centered around zero.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Scaling
+</td>
+<td style="text-align:left;">
+Selected models
+</td>
+<td style="text-align:left;">
+Places numeric predictors on comparable scales.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+No automatic outlier deletion
+</td>
+<td style="text-align:left;">
+All models
+</td>
+<td style="text-align:left;">
+Extreme values may represent meaningful cases.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Complete-case modeling dataset
+</td>
+<td style="text-align:left;">
+Modeling workflow
+</td>
+<td style="text-align:left;">
+Keeps model comparison consistent.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Five-fold cross-validation
+</td>
+<td style="text-align:left;">
+Training set
+</td>
+<td style="text-align:left;">
+Tunes hyperparameters and estimates training performance.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Holdout testing set
+</td>
+<td style="text-align:left;">
+Final evaluation
+</td>
+<td style="text-align:left;">
+Estimates performance on unseen records.
+</td>
+</tr>
+</tbody>
+</table>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Item
+</th>
+<th style="text-align:center;">
+Value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Original predictor count
+</td>
+<td style="text-align:center;">
+18
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Encoded predictor count
+</td>
+<td style="text-align:center;">
+53
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Training rows
+</td>
+<td style="text-align:center;">
+5279
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Testing rows
+</td>
+<td style="text-align:center;">
+1318
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="baseline-model" class="section level2">
+<h2>5. Baseline Model</h2>
+<p>The baseline model predicts the average FinalGrade from the training
+set for every student. It creates a simple comparison point for the
+other models.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Data
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Training
+</td>
+<td style="text-align:right;">
+10.111
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+6.980
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+10.331
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+7.055
+</td>
+</tr>
+</tbody>
+</table>
+<div class="takeaway-box">
+<p><b>Baseline Decision:</b> The baseline does not use predictors. The
+trained models should improve on this reference point to justify their
+complexity.</p>
+</div>
+<hr class="section-divider">
+<h2>Model Development</h2>
+
+<div class="section-intro">
+  The following sections train the model families used in the technical report. The results page will compare performance metrics, model ranking, and variable importance in more detail.
+</div>
+</div>
+<div id="multiple-linear-regression" class="section level2">
+<h2>6. Multiple Linear Regression</h2>
+<p>Multiple linear regression is the first interpretable model. It is
+useful as a starting point because the coefficients are easy to inspect
+and the assumptions are straightforward.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:right;">
+4.941
+</td>
+<td style="text-align:right;">
+0.762
+</td>
+<td style="text-align:right;">
+2.752
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="lasso-regression" class="section level2">
+<h2>7. LASSO Regression</h2>
+<p>LASSO regression adds regularization to the linear model. It can
+shrink less useful coefficients toward zero, which helps with
+overfitting control.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+<th style="text-align:right;">
+alpha
+</th>
+<th style="text-align:right;">
+lambda
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:right;">
+4.8408
+</td>
+<td style="text-align:right;">
+0.7697
+</td>
+<td style="text-align:right;">
+2.9144
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:right;">
+0.3728
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="generalized-additive-model" class="section level2">
+<h2>8. Generalized Additive Model</h2>
+<p>The GAM is included because some predictor relationships may not be
+strictly linear. This version uses <code>mgcv::gam()</code> directly to
+avoid the interactive dependency issue caused by
+<code>caret::train(method = "gamSpline")</code>.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Data
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+Training
+</td>
+<td style="text-align:right;">
+4.240
+</td>
+<td style="text-align:right;">
+0.824
+</td>
+<td style="text-align:right;">
+2.481
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+6.596
+</td>
+<td style="text-align:right;">
+0.592
+</td>
+<td style="text-align:right;">
+2.616
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="random-forest" class="section level2">
+<h2>9. Random Forest</h2>
+<p>Random forest can capture nonlinear patterns and interactions without
+requiring linear assumptions.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+<th style="text-align:center;">
+mtry
+</th>
+<th style="text-align:center;">
+splitrule
+</th>
+<th style="text-align:center;">
+min.node.size
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:right;">
+4.805
+</td>
+<td style="text-align:right;">
+0.779
+</td>
+<td style="text-align:right;">
+2.888
+</td>
+<td style="text-align:center;">
+8
+</td>
+<td style="text-align:center;">
+variance
+</td>
+<td style="text-align:center;">
+5
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="gradient-boosted-trees" class="section level2">
+<h2>10. Gradient Boosted Trees</h2>
+<p>Gradient boosted trees build many small trees sequentially, with each
+tree learning from prior errors.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+<th style="text-align:right;">
+interaction.depth
+</th>
+<th style="text-align:center;">
+n.trees
+</th>
+<th style="text-align:center;">
+shrinkage
+</th>
+<th style="text-align:center;">
+n.minobsinnode
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:right;">
+4.7445
+</td>
+<td style="text-align:right;">
+0.7788
+</td>
+<td style="text-align:right;">
+2.8291
+</td>
+<td style="text-align:right;">
+3
+</td>
+<td style="text-align:center;">
+200
+</td>
+<td style="text-align:center;">
+0.05
+</td>
+<td style="text-align:center;">
+10
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="support-vector-machine" class="section level2">
+<h2>11. Support Vector Machine</h2>
+<p>The SVM uses a radial basis function kernel. Centering and scaling
+are applied because SVM performance is sensitive to predictor scale.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+<th style="text-align:right;">
+sigma
+</th>
+<th style="text-align:right;">
+C
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:right;">
+6.0195
+</td>
+<td style="text-align:right;">
+0.676
+</td>
+<td style="text-align:right;">
+3.456
+</td>
+<td style="text-align:right;">
+0.005
+</td>
+<td style="text-align:right;">
+1
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="single-hidden-layer-neural-network" class="section level2">
+<h2>12. Single-Hidden-Layer Neural Network</h2>
+<p>The final technical report required a neural-network-style model with
+one hidden layer. This page uses <code>nnet</code> because it is lighter
+and easier to reproduce inside a standard RMarkdown build.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+<th style="text-align:right;">
+size
+</th>
+<th style="text-align:right;">
+decay
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:right;">
+5.504
+</td>
+<td style="text-align:right;">
+0.7051
+</td>
+<td style="text-align:right;">
+3.1285
+</td>
+<td style="text-align:right;">
+5
+</td>
+<td style="text-align:right;">
+0.01
+</td>
+</tr>
+</tbody>
+</table>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Component
+</th>
+<th style="text-align:left;">
+Specification
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Input layer
+</td>
+<td style="text-align:left;">
+53 encoded predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Hidden layer
+</td>
+<td style="text-align:left;">
+One hidden layer
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Hidden nodes requested
+</td>
+<td style="text-align:left;">
+106 nodes
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Hidden nodes used
+</td>
+<td style="text-align:left;">
+20 nodes
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Output layer
+</td>
+<td style="text-align:left;">
+One output node
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Output type
+</td>
+<td style="text-align:left;">
+Numeric FinalGrade prediction
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Implementation note
+</td>
+<td style="text-align:left;">
+nnet is used as a lightweight approximation; Keras or Torch would be
+used for a stricter ReLU implementation.
+</td>
+</tr>
+</tbody>
+</table>
+<hr class="section-divider">
+<h2>Model Build Check</h2>
+
+<div class="section-intro">
+  This section gives a quick model-build preview before the results page. The results page will provide the fuller comparison, ranking, interpretation, and recommendation.
+</div>
+</div>
+<div id="cross-validation-performance-preview" class="section level2">
+<h2>13. Cross-Validation Performance Preview</h2>
+<p><img src="student_retention_modeling_files/figure-html/17-cv-rmse-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="holdout-performance-preview" class="section level2">
+<h2>14. Holdout Performance Preview</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Data
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+Rsquared
+</th>
+<th style="text-align:right;">
+MAE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+5.012
+</td>
+<td style="text-align:right;">
+0.765
+</td>
+<td style="text-align:right;">
+2.826
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+5.264
+</td>
+<td style="text-align:right;">
+0.740
+</td>
+<td style="text-align:right;">
+2.886
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+5.879
+</td>
+<td style="text-align:right;">
+0.676
+</td>
+<td style="text-align:right;">
+2.815
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+5.907
+</td>
+<td style="text-align:right;">
+0.673
+</td>
+<td style="text-align:right;">
+3.051
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+6.212
+</td>
+<td style="text-align:right;">
+0.638
+</td>
+<td style="text-align:right;">
+3.386
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+6.596
+</td>
+<td style="text-align:right;">
+0.592
+</td>
+<td style="text-align:right;">
+2.616
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+9.593
+</td>
+<td style="text-align:right;">
+0.138
+</td>
+<td style="text-align:right;">
+4.151
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Testing
+</td>
+<td style="text-align:right;">
+10.331
+</td>
+<td style="text-align:right;">
+0.000
+</td>
+<td style="text-align:right;">
+7.055
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_modeling_files/figure-html/18-holdout-rmse-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+<p><img src="student_retention_modeling_files/figure-html/18-train-test-gap-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+<div class="takeaway-box">
+<p><b>Build Check:</b> The results page will use these saved model
+objects and metrics to compare performance, inspect variable importance,
+and recommend a final model.</p>
+</div>
+<hr class="section-divider">
+<h2>Dimensionality and Segmentation Discussion</h2>
+</div>
+<div id="pca-discussion" class="section level2">
+<h2>15. PCA Discussion</h2>
+<p>Principal Component Analysis could be useful if the goal were to
+reduce redundancy among correlated predictors, especially the grade
+variables and teacher evaluation items. In this version, I use
+<strong>CumulativeTeacherEval</strong> to summarize the 16 teacher
+evaluation items because it is easier to interpret than abstract
+principal components.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Question
+</th>
+<th style="text-align:left;">
+Answer
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Does PCA make sense for this dataset?
+</td>
+<td style="text-align:left;">
+Yes. The teacher evaluation items and grade-related variables may
+contain correlated information.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Why not use PCA as the primary approach here?
+</td>
+<td style="text-align:left;">
+The current project keeps variables easier to interpret.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+How could PCA be used later?
+</td>
+<td style="text-align:left;">
+Components could be created from academic and engagement predictors,
+then used as model inputs.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Main tradeoff
+</td>
+<td style="text-align:left;">
+PCA may reduce redundancy but can make the model harder to explain.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="cluster-analysis-discussion" class="section level2">
+<h2>16. Cluster Analysis Discussion</h2>
+<p>Cluster analysis could identify groups of similar students before
+supervised modeling. For example, students might cluster into
+high-performing, attendance-risk, financial-risk, or high-support-usage
+groups. Those cluster labels could later be used as additional
+predictors or as a separate support-planning tool.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Question
+</th>
+<th style="text-align:left;">
+Answer
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Does cluster analysis make sense for this dataset?
+</td>
+<td style="text-align:left;">
+Yes. The dataset includes academic, attendance, financial,
+support-service, and engagement variables.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+How could clusters be used?
+</td>
+<td style="text-align:left;">
+Cluster labels could be added as predictors or used to describe student
+groups.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Why not make clustering the primary method?
+</td>
+<td style="text-align:left;">
+The main task is supervised prediction of FinalGrade.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Potential future use
+</td>
+<td style="text-align:left;">
+Create student groups such as attendance-risk, financial-risk,
+engagement-risk, or high-support-usage.
+</td>
+</tr>
+</tbody>
+</table>
+<hr class="section-divider">
+<h2>Save Modeling Objects for Results Page</h2>
+</div>
+<div id="modeling-summary" class="section level2">
+<h2>17. Modeling Summary</h2>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Model_Family
+</th>
+<th style="text-align:left;">
+Strength
+</th>
+<th style="text-align:left;">
+Limitation
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Reference model
+</td>
+<td style="text-align:left;">
+Simple comparison point
+</td>
+<td style="text-align:left;">
+Does not use predictors
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:left;">
+Parametric
+</td>
+<td style="text-align:left;">
+Fast and interpretable
+</td>
+<td style="text-align:left;">
+Assumes mostly linear relationships
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:left;">
+Regularized parametric
+</td>
+<td style="text-align:left;">
+Feature selection and overfitting control
+</td>
+<td style="text-align:left;">
+May underfit nonlinear patterns
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+Flexible regression
+</td>
+<td style="text-align:left;">
+Captures smoother nonlinear patterns
+</td>
+<td style="text-align:left;">
+Less direct to compare because it is fitted outside caret
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:left;">
+Tree-based ensemble
+</td>
+<td style="text-align:left;">
+Captures nonlinear patterns and interactions
+</td>
+<td style="text-align:left;">
+Less interpretable than linear models
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:left;">
+Tree-based ensemble
+</td>
+<td style="text-align:left;">
+Strong predictive performance potential
+</td>
+<td style="text-align:left;">
+Can overfit without careful tuning
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:left;">
+Kernel-based model
+</td>
+<td style="text-align:left;">
+Flexible nonlinear modeling
+</td>
+<td style="text-align:left;">
+Sensitive to tuning and scaling
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:left;">
+Single-hidden-layer network
+</td>
+<td style="text-align:left;">
+Can model complex relationships
+</td>
+<td style="text-align:left;">
+Less interpretable and more computationally sensitive
+</td>
+</tr>
+</tbody>
+</table>
+  <div class="grid-3">
+
+    <div class="card">
+      <h4>Model Target</h4>
+      <p>
+        FinalGrade is the numeric outcome used for model development.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Models Trained</h4>
+      <p>
+        The workflow includes linear, regularized, flexible, tree-based, kernel-based, and neural-network models.
+      </p>
+    </div>
+
+    <div class="card">
+      <h4>Next Step</h4>
+      <p>
+        The results page will compare test-set performance, hyperparameters, variable importance, and model ranking.
+      </p>
+    </div>
+
+  </div>
+
+  <div class="takeaway-box">
+    <b>Next File:</b> student_retention_results.Rmd will use the saved modeling objects to report model performance and model ranking.
+  </div>
+
+  <div class="page-nav bottom-nav">
+    <a href="student_retention_eda.html" class="nav-pill nav-back">← Back: EDA</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+    <a href="student_retention_results.html" class="nav-pill nav-next">Next: Results →</a>
+  </div>
+
+  </div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

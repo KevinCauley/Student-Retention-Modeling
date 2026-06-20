@@ -1,0 +1,732 @@
+---
+title: "Student Retention Insights | Kevin Cauley"
+
+output:
+  html_document:
+    always_allow_html: true
+    self_contained: false
+    toc: false
+    theme: null
+    highlight: null
+    fig_caption: true
+    css: assets/styles.css
+    includes:
+      in_header: ../docs/assets/header.html
+
+number_sections: false
+---
+
+```{r 00-setup, include=FALSE}
+library(here)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+PLOT_SUBFOLDER <- "insights"
+
+dir.create(here::here("docs"), showWarnings = FALSE, recursive = TRUE)
+dir.create(here::here("docs", "figures"), showWarnings = FALSE, recursive = TRUE)
+dir.create(here::here("docs", "figures", PLOT_SUBFOLDER), showWarnings = FALSE, recursive = TRUE)
+
+save_plot <- function(plot_object, filename, width = 8.8, height = 5.4, dpi = 300) {
+  plot_path <- here::here("docs", "figures", PLOT_SUBFOLDER, filename)
+
+  ggplot2::ggsave(
+    filename = plot_path,
+    plot = plot_object,
+    width = width,
+    height = height,
+    dpi = dpi,
+    bg = "white"
+  )
+}
+
+cat("Using plot folder:", here::here("docs", "figures", PLOT_SUBFOLDER), "\n")
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "78%",
+  fig.retina = 2,
+  fig.width = 7.0,
+  fig.height = 4.0,
+  dpi = 220,
+  cache = FALSE,
+  dev = "png"
+)
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(tibble)
+
+wrap_text <- function(x, width = 58) {
+  stringr::str_wrap(x, width = width)
+}
+
+theme_student <- function(base_size = 10.5) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.title = element_text(
+        face = "bold",
+        size = base_size + 3,
+        color = "#1F2D3D",
+        lineheight = 1.08,
+        margin = margin(b = 5)
+      ),
+      plot.subtitle = element_text(
+        size = base_size,
+        color = "#617284",
+        lineheight = 1.15,
+        margin = margin(b = 10)
+      ),
+      axis.title = element_text(
+        face = "bold",
+        color = "#1F2D3D",
+        size = base_size + 0.5
+      ),
+      axis.text = element_text(
+        color = "#4A5568",
+        size = base_size - 0.5
+      ),
+      panel.grid.major = element_line(color = "#E8EEF5", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(
+        face = "bold",
+        color = "#1F2D3D",
+        size = base_size
+      ),
+      strip.background = element_rect(fill = "#EEF7FF", color = NA),
+      plot.margin = margin(12, 16, 12, 16),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold")
+    )
+}
+
+student_blue <- "#3A86FF"
+student_teal <- "#2A9D8F"
+student_navy <- "#17324D"
+student_gold <- "#F2B84B"
+student_red <- "#D95D5D"
+student_gray <- "#8A97A6"
+```
+
+```{r 01-load-results-objects}
+results_object_path <- here::here("data", "processed", "student_retention_results_objects.rds")
+modeling_object_path <- here::here("data", "processed", "student_retention_modeling_objects.rds")
+clean_data_path <- here::here("data", "processed", "student_retention_cleaned.rds")
+
+if (!file.exists(results_object_path)) {
+  stop("Missing data/processed/student_retention_results_objects.rds. Render student_retention_results.Rmd before rendering this page.")
+}
+
+if (!file.exists(modeling_object_path)) {
+  stop("Missing data/processed/student_retention_modeling_objects.rds. Render student_retention_modeling.Rmd before rendering this page.")
+}
+
+results_objects <- readRDS(results_object_path)
+modeling_objects <- readRDS(modeling_object_path)
+
+student_clean <- if (file.exists(clean_data_path)) {
+  readRDS(clean_data_path)
+} else {
+  NULL
+}
+
+model_ranking <- results_objects$model_ranking
+performance_wide <- results_objects$performance_wide
+model_holdout_metrics <- results_objects$model_holdout_metrics
+model_train_metrics <- results_objects$model_train_metrics
+model_test_metrics <- results_objects$model_test_metrics
+best_model_name <- results_objects$best_model_name
+best_predictions_df <- results_objects$best_predictions_df
+prediction_error_summary <- results_objects$prediction_error_summary
+hyperparameter_table <- results_objects$hyperparameter_table
+all_importance <- results_objects$all_importance
+importance_summary <- results_objects$importance_summary
+top_importance <- results_objects$top_importance
+recommendation_table <- results_objects$recommendation_table
+
+modeling_df <- modeling_objects$modeling_df
+train_df <- modeling_objects$train_df
+test_df <- modeling_objects$test_df
+
+if (!"Recommendation_Role" %in% names(model_ranking)) {
+  model_ranking <- model_ranking %>%
+    mutate(
+      Recommendation_Role = if_else(
+        Model == best_model_name,
+        "Recommended final model",
+        "Comparison model"
+      )
+    )
+}
+
+best_model_row <- model_ranking %>%
+  filter(Model == best_model_name) %>%
+  slice(1)
+
+best_testing_rmse <- best_model_row$Testing_RMSE
+best_testing_r2 <- best_model_row$Testing_Rsquared
+best_testing_mae <- best_model_row$Testing_MAE
+best_rmse_gap <- best_model_row$RMSE_Gap
+
+baseline_row <- model_ranking %>%
+  filter(Model == "Baseline Mean") %>%
+  slice(1)
+
+baseline_rmse <- if (nrow(baseline_row) > 0) {
+  baseline_row$Testing_RMSE
+} else {
+  NA_real_
+}
+
+rmse_improvement <- ifelse(
+  !is.na(baseline_rmse) && baseline_rmse > 0,
+  (baseline_rmse - best_testing_rmse) / baseline_rmse,
+  NA_real_
+)
+
+rmse_improvement_text <- ifelse(
+  is.na(rmse_improvement),
+  "not available from the saved baseline comparison",
+  percent(rmse_improvement, accuracy = 0.1)
+)
+
+risk_review_summary <- best_predictions_df %>%
+  mutate(
+    Predicted_Risk_Group = if_else(Predicted < 70, "Predicted Below 70", "Predicted 70 or Higher"),
+    Actual_Risk_Group = if_else(Actual < 70, "Actual Below 70", "Actual 70 or Higher")
+  ) %>%
+  count(Predicted_Risk_Group) %>%
+  mutate(
+    Percent = n / sum(n),
+    Label = paste0(comma(n), "\n", percent(Percent, accuracy = 0.1))
+  )
+
+actual_risk_summary <- best_predictions_df %>%
+  mutate(
+    Actual_Risk_Group = if_else(Actual < 70, "Actual Below 70", "Actual 70 or Higher")
+  ) %>%
+  count(Actual_Risk_Group) %>%
+  mutate(
+    Percent = n / sum(n)
+  )
+
+top_predictor_names <- top_importance %>%
+  filter(!is.na(Variable_Clean)) %>%
+  slice_head(n = 5) %>%
+  pull(Variable_Clean)
+
+top_predictor_text <- if (length(top_predictor_names) > 0) {
+  paste(top_predictor_names, collapse = ", ")
+} else {
+  "variable importance was unavailable for the saved model objects"
+}
+```
+
+```{=html}
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • `r format(Sys.Date(), '%B %d, %Y')`
+    </p>
+    
+    <h1 class="hero-title">Insights & Recommendations</h1>
+
+    <p class="hero-subtitle">
+      This page translates the modeling results into final findings, implementation considerations, limitations, and student-support recommendations. The focus is practical: how the analysis could help an institution identify academic risk earlier and respond before students fall further behind.
+    </p>
+
+  </div>
+
+  <div class="page-nav">
+    <a href="student_retention_results.html" class="nav-pill nav-back">← Back: Results</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+  </div>
+
+  <hr class="section-divider">
+
+  <h2>Page Overview</h2>
+
+  <div class="section-intro">
+    The EDA, modeling, and results pages established the technical workflow. This final page summarizes what the project found, what the model can support, what it should not be used for without additional validation, and how the findings could inform advising, tutoring, attendance follow-up, and financial-support review.
+  </div>
+
+  <div class="takeaway-box">
+    <b>Included in this page:</b> Final model recommendation • Key findings • Student-support recommendations • Risk review • Ethical considerations • Limitations • Next steps
+  </div>
+```
+
+## 1. Executive Summary
+
+```{=html}
+<div class="model-highlight-card">
+  <div class="model-badge">FINAL RECOMMENDATION</div>
+  <h3 class="model-title">Use `r best_model_name` as the recommended model from this workflow.</h3>
+  <p class="model-subtitle">
+    This model produced the strongest testing-set performance in the saved results workflow. The model should be used as a decision-support tool for identifying students who may need review, not as an automated decision system.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Testing RMSE</span>
+      <span class="metric-value">`r number(best_testing_rmse, accuracy = 0.001)`</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing R-Squared</span>
+      <span class="metric-value">`r number(best_testing_r2, accuracy = 0.001)`</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing MAE</span>
+      <span class="metric-value">`r number(best_testing_mae, accuracy = 0.001)`</span>
+    </div>
+  </div>
+</div>
+```
+
+The project started as an academic retention modeling exercise, but the workflow also mirrors a real institutional research problem. A university does not only need to know which students eventually stop out. It also needs earlier signals that a student may be struggling while there is still time to respond.
+
+In this project, **FinalGrade** was used as the primary modeling outcome. **EnrollmentStatus** was retained as a predictor and context variable rather than treated as the outcome. That structure supports a practical early-support frame: predict academic performance, identify risk patterns, and connect those patterns to possible intervention points.
+
+```{r 02-executive-summary-table}
+executive_summary <- tibble::tribble(
+  ~Area, ~Final_Takeaway,
+  "Primary outcome", "FinalGrade was used as the numeric modeling target.",
+  "Best-performing model", best_model_name,
+  "Primary evaluation metric", "Testing RMSE, supported by R-squared and MAE.",
+  "Main practical use", "Identify students who may benefit from academic support review.",
+  "Strongest signal group", "Grade-related predictors were the most direct performance signals.",
+  "Decision caution", "Predictions should support human review, not replace advising judgment."
+)
+
+kable(executive_summary, align = "ll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 2. What the Model Results Suggest
+
+The results support a straightforward conclusion: academic performance data contains strong signal for predicting final course outcomes. That is expected because earlier grade components are directly tied to final grade performance. However, the broader value of the project is not only the prediction itself. The value is in combining performance signals with attendance, financial, engagement, and support-service context so that the institution can decide what kind of help may be appropriate.
+
+```{r 03-key-findings-table}
+key_findings <- tibble::tribble(
+  ~Finding, ~What_It_Means, ~Practical_Use,
+  "Earlier academic performance was highly relevant.", "Grade components provide a direct signal of final course performance.", "Use early grade movement to prioritize academic check-ins.",
+  "Attendance remains important.", "Absence patterns give a behavioral signal that can be reviewed before final outcomes are known.", "Trigger attendance follow-up when absence patterns begin to increase.",
+  "Financial indicators add context.", "Scholarship percentage and past-due balance may help explain pressure around persistence and performance.", "Route students to financial-support review when needed.",
+  "Support-service variables need careful interpretation.", "High support usage may indicate both help-seeking behavior and underlying academic need.", "Use support usage as context rather than assuming it causes outcomes.",
+  "Model performance must be paired with human review.", "The model can rank risk, but it cannot understand each student’s full situation.", "Use predictions to support advising conversations, not to make automatic decisions."
+)
+
+kable(key_findings, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 3. Model Performance in Context
+
+The recommended model improved on the baseline mean model by approximately **`r rmse_improvement_text`** in testing RMSE. That improvement matters because the baseline does not use student-level predictors. Any useful predictive model should perform better than simply assigning every student the average final grade.
+
+```{r 04-performance-context-table}
+performance_context <- model_ranking %>%
+  select(
+    Rank,
+    Model,
+    Recommendation_Role,
+    Testing_RMSE,
+    Testing_Rsquared,
+    Testing_MAE,
+    RMSE_Gap
+  ) %>%
+  mutate(
+    Testing_RMSE = number(Testing_RMSE, accuracy = 0.001),
+    Testing_Rsquared = number(Testing_Rsquared, accuracy = 0.001),
+    Testing_MAE = number(Testing_MAE, accuracy = 0.001),
+    RMSE_Gap = number(RMSE_Gap, accuracy = 0.001)
+  )
+
+kable(performance_context, align = "cllrrrr") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r 04-performance-context-plot, fig.width=7.4, fig.height=4.6, out.width="78%"}
+plot_model_ranking <- model_ranking %>%
+  mutate(
+    Model = fct_reorder(Model, Testing_RMSE),
+    IsBest = if_else(as.character(Model) == best_model_name, "Recommended", "Comparison"),
+    Label = number(Testing_RMSE, accuracy = 0.001)
+  )
+
+p <- ggplot(plot_model_ranking, aes(x = Testing_RMSE, y = fct_rev(Model), fill = IsBest)) +
+  geom_col(width = 0.62, alpha = 0.92) +
+  geom_text(
+    aes(label = Label),
+    hjust = -0.10,
+    size = 3.2,
+    fontface = "bold",
+    color = student_navy
+  ) +
+  scale_fill_manual(values = c("Recommended" = student_teal, "Comparison" = student_blue)) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.22))) +
+  coord_cartesian(clip = "off") +
+  labs(
+    title = "Final Model Ranking by Testing RMSE",
+    subtitle = wrap_text("The recommended model is selected from holdout testing performance, with train/test stability and interpretability considered in the final recommendation."),
+    x = "Testing RMSE",
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_student(10.2) +
+  theme(
+    plot.margin = margin(18, 36, 16, 18)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "final_model_ranking_testing_rmse.png",
+  width = 8.8,
+  height = 5.4
+)
+```
+
+## 4. Risk Review from Predicted Grades
+
+Predicted final grades can be translated into a support-review segment. This should not be interpreted as a final label on the student. It is simply a way to prioritize outreach when resources are limited.
+
+```{r 05-risk-review-plot, fig.width=6.8, fig.height=4.3, out.width="74%"}
+risk_plot_df <- risk_review_summary %>%
+  mutate(
+    Predicted_Risk_Group = factor(
+      Predicted_Risk_Group,
+      levels = c("Predicted 70 or Higher", "Predicted Below 70")
+    )
+  )
+
+risk_y_max <- max(risk_plot_df$n, na.rm = TRUE) * 1.38
+
+p <- ggplot(risk_plot_df, aes(x = Predicted_Risk_Group, y = n, fill = Predicted_Risk_Group)) +
+  geom_col(width = 0.55, alpha = 0.95) +
+  geom_label(
+    aes(label = Label),
+    vjust = -0.10,
+    fontface = "bold",
+    size = 3.35,
+    label.size = 0,
+    fill = "white"
+  ) +
+  scale_fill_manual(values = c("Predicted 70 or Higher" = student_teal, "Predicted Below 70" = student_red)) +
+  scale_y_continuous(
+    labels = comma,
+    limits = c(0, risk_y_max),
+    expand = expansion(mult = c(0, 0.04))
+  ) +
+  coord_cartesian(clip = "off") +
+  labs(
+    title = "Predicted Academic Support Review Segment",
+    subtitle = wrap_text("Predicted grades below 70 are treated as a review flag rather than an automatic decision."),
+    x = NULL,
+    y = "Testing Records"
+  ) +
+  theme_student(10.2) +
+  theme(
+    legend.position = "none",
+    plot.margin = margin(24, 22, 16, 18)
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "predicted_academic_support_review_segment.png",
+  width = 7.8,
+  height = 5.0
+)
+```
+
+```{r 05-risk-review-table}
+risk_review_display <- risk_review_summary %>%
+  mutate(
+    Percent = percent(Percent, accuracy = 0.1)
+  ) %>%
+  select(
+    Predicted_Risk_Group,
+    Records = n,
+    Percent
+  )
+
+kable(risk_review_display, align = "lcc") %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+<div class="takeaway-box">
+  <b>Decision Use:</b> The predicted-risk segment should prompt review, not punishment. A student flagged by the model should receive support-oriented outreach, not an automatic negative action.
+</div>
+
+## 5. Most Useful Predictors
+
+The model results suggest that the strongest predictors are concentrated around academic progress, especially grade-related signals. This is not surprising. Earlier performance is often the most direct indicator of final performance. The more useful operational insight is that other variables help explain what kind of support may be needed.
+
+Top predictors from the model comparison included: **`r top_predictor_text`**.
+
+```{r 06-top-predictors-table}
+top_predictors_display <- top_importance %>%
+  filter(!is.na(Variable_Clean)) %>%
+  slice_head(n = 12) %>%
+  mutate(
+    Mean_Importance = number(Mean_Importance, accuracy = 0.001),
+    Mean_Rank = number(Mean_Rank, accuracy = 0.1)
+  ) %>%
+  select(
+    Aggregate_Rank,
+    Variable = Variable_Clean,
+    Models_Available,
+    Mean_Rank,
+    Mean_Importance,
+    Best_Rank
+  )
+
+kable(top_predictors_display, align = "clcrrc") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{r 06-top-predictors-plot, fig.width=7.4, fig.height=4.8, out.width="78%"}
+if (nrow(top_importance) > 0 && !all(is.na(top_importance$Variable_Clean))) {
+
+  top_importance_plot <- top_importance %>%
+    filter(!is.na(Variable_Clean)) %>%
+    slice_head(n = 12) %>%
+    mutate(
+      Variable_Clean = fct_reorder(Variable_Clean, Mean_Importance),
+      Label = number(Mean_Importance, accuracy = 0.1)
+    )
+
+  p <- ggplot(top_importance_plot, aes(x = Mean_Importance, y = Variable_Clean)) +
+    geom_col(fill = student_gold, width = 0.62, alpha = 0.95) +
+    geom_text(
+      aes(label = Label),
+      hjust = -0.10,
+      size = 3.1,
+      fontface = "bold",
+      color = student_navy
+    ) +
+    scale_x_continuous(expand = expansion(mult = c(0, 0.24))) +
+    coord_cartesian(clip = "off") +
+    labs(
+      title = "Top Predictors by Average Model Importance",
+      subtitle = wrap_text("Predictor importance helps explain which variables were most consistently useful across model families."),
+      x = "Mean Importance",
+      y = NULL
+    ) +
+    theme_student(10.2) +
+    theme(
+      plot.margin = margin(18, 38, 16, 18)
+    )
+
+  print(p)
+
+  save_plot(
+    p,
+    "top_predictors_average_model_importance_insights.png",
+    width = 8.8,
+    height = 5.5
+  )
+
+}
+```
+
+## 6. Recommended Student-Support Actions
+
+The model does not directly prescribe an intervention. It identifies patterns that can help an advising or student-success team prioritize review. The strongest use case is to connect predicted academic risk with the type of support a student may need.
+
+```{r 07-support-action-table}
+support_actions <- tibble::tribble(
+  ~Signal, ~What_To_Review, ~Recommended_Action,
+  "Low predicted final grade", "Academic performance pattern and course history", "Prioritize advising outreach and academic-success review.",
+  "Weak early grade components", "First and second grading-period performance", "Offer tutoring, instructor check-in, or course-specific academic support.",
+  "Increasing absences", "Attendance pattern across grading periods", "Trigger attendance follow-up before the student falls further behind.",
+  "Past-due balance or low financial support", "Account balance and aid context", "Route to financial-aid or student accounts review.",
+  "High support-service usage", "Advising, tutoring, counseling, and formative plan activity", "Review whether current support is sufficient or needs adjustment.",
+  "Low engagement/course-experience indicators", "Teacher evaluation and course experience signals", "Review course-level friction, communication, and student experience."
+)
+
+kable(support_actions, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 7. Intervention Priority Framework
+
+A practical use of the model is not to label students as “good” or “bad.” A better use is to create a review queue. The table below translates model output into a support-priority framework.
+
+```{r 08-intervention-framework-table}
+intervention_framework <- tibble::tribble(
+  ~Priority_Level, ~Suggested_Criteria, ~Response,
+  "High Priority", "Predicted FinalGrade below 70 or large negative performance trend", "Advisor review within the current term; tutoring and support-service referral as needed.",
+  "Moderate Priority", "Predicted FinalGrade near the risk threshold or worsening attendance", "Monitor progress and contact student if grades or attendance continue to decline.",
+  "Context Review", "Financial pressure, high support-service usage, or unusual data pattern", "Review account, advising, and support history before deciding next action.",
+  "Low Priority", "Predicted FinalGrade comfortably above threshold with stable attendance", "No immediate intervention; continue standard academic monitoring."
+)
+
+kable(intervention_framework, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+```{=html}
+<div class="grid-3">
+
+  <div class="card">
+    <h4>Academic Support</h4>
+    <p>
+      Use early grade signals to prioritize tutoring, instructor follow-up, and advising conversations.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4>Attendance Follow-Up</h4>
+    <p>
+      Use absence patterns as an early behavioral signal that a student may need outreach.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4>Financial Review</h4>
+    <p>
+      Use financial indicators as context for support, not as a stand-alone risk judgment.
+    </p>
+  </div>
+
+</div>
+```
+
+## 8. Ethical and Practical Considerations
+
+A student-retention model has to be handled carefully. The outcome is academic performance, but the consequences of poor implementation can affect real students. For that reason, the model should support human decision-making rather than replace it.
+
+```{r 09-ethics-table}
+ethics_table <- tibble::tribble(
+  ~Concern, ~Why_It_Matters, ~Recommended_Control,
+  "False positives", "A student may be flagged even though they are not truly at risk.", "Use supportive outreach language and allow advisor review.",
+  "False negatives", "A struggling student may not be flagged by the model.", "Do not rely only on model output; keep existing advising channels active.",
+  "Sensitive context variables", "Demographic or background variables can introduce fairness concerns.", "Audit performance by subgroup before operational use.",
+  "Financial indicators", "Financial variables may reflect structural barriers rather than student effort.", "Use them to route support, not to penalize students.",
+  "Data anomalies", "Grades above the expected range and extreme balances can affect model behavior.", "Review data-quality rules before production deployment.",
+  "Over-automation", "Automated labels can create stigma or poor decisions.", "Use predictions as a review queue, not as a final decision."
+)
+
+kable(ethics_table, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 9. Limitations
+
+This project demonstrates a complete modeling workflow, but several limitations should be addressed before the model could be used operationally.
+
+```{r 10-limitations-table}
+limitations_table <- tibble::tribble(
+  ~Limitation, ~Impact, ~Next_Step,
+  "Single dataset snapshot", "The model may not generalize to future terms or other institutions.", "Validate on newer semesters and additional cohorts.",
+  "FinalExamGrade included in full model", "The full model may be less useful for early intervention because final exam data arrives late.", "Use an early-warning version that excludes late-term variables.",
+  "Grade anomalies", "Values outside the expected 0-100 range can distort training and interpretation.", "Define institutional data-quality rules before deployment.",
+  "Support-service interpretation", "Support usage may indicate need, help-seeking behavior, or both.", "Interpret support-service variables with advising context.",
+  "No live intervention testing", "The model predicts risk but does not prove which interventions work.", "Pilot interventions and measure outcomes over time.",
+  "Fairness not fully audited", "Model performance may differ across student groups.", "Evaluate subgroup performance before any operational rollout."
+)
+
+kable(limitations_table, align = "lll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 10. What I Would Do Next
+
+The next phase would move from model-building to model validation and intervention design. The model should be tested on newer student records, reviewed for fairness, and paired with a clear outreach process.
+
+```{r 11-next-steps-table}
+next_steps <- tibble::tribble(
+  ~Step, ~Purpose,
+  "Build an early-warning version", "Exclude late-arriving variables such as FinalExamGrade so the model can support earlier intervention.",
+  "Validate on future terms", "Confirm that the model performs consistently on newer student records.",
+  "Review subgroup performance", "Check whether prediction error differs by student group or program.",
+  "Create advisor-facing risk bands", "Translate predicted grades into practical review categories.",
+  "Pilot intervention workflows", "Test whether outreach, tutoring, advising, or financial review improves outcomes.",
+  "Monitor model drift", "Re-check performance each term as students, courses, and institutional patterns change."
+)
+
+kable(next_steps, align = "ll") %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+## 11. Final Conclusion
+
+The strongest conclusion from this project is that student retention analytics should be treated as an early-support system, not just a reporting exercise. Predicting final academic performance can help identify students who may need help before course failure or disengagement becomes harder to reverse.
+
+The recommended model, **`r best_model_name`**, provided the best testing-set performance in this workflow. However, the model is most valuable when paired with human review and practical intervention planning. Academic, attendance, financial, engagement, and support-service data all tell part of the story. The model helps organize those signals into a structured review process.
+
+```{=html}
+<div class="model-highlight-card">
+  <div class="model-badge">FINAL TAKEAWAY</div>
+  <h3 class="model-title">The model should support earlier conversations, not automated decisions.</h3>
+  <p class="model-subtitle">
+    The best use of this project is to help student-success teams identify who may need support, understand why they may need it, and respond while there is still time to improve the outcome.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Model Use</span>
+      <span class="metric-value">Decision Support</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Main Audience</span>
+      <span class="metric-value">Student Success Teams</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Recommended Next Step</span>
+      <span class="metric-value">Early-Warning Pilot</span>
+    </div>
+  </div>
+</div>
+
+<div class="page-nav bottom-nav">
+  <a href="student_retention_results.html" class="nav-pill nav-back">← Back: Results</a>
+  <a href="index.html" class="nav-pill nav-home">Home</a>
+</div>
+
+  </div>
+</div>
+```

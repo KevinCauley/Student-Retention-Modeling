@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Student Retention Insights | Kevin Cauley</title>
+
+<script src="student_retention_insights_files/header-attrs-2.31/header-attrs.js"></script>
+<script src="student_retention_insights_files/kePrint-0.0.1/kePrint.js"></script>
+<link href="student_retention_insights_files/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="assets/styles.css?v=20260619" type="text/css" />
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Student Retention Insights | Kevin
+Cauley</h1>
+
+
+
+<div class="main-container">
+  <div class="report-container">
+
+  <div class="hero-section">
+
+    <p class="hero-meta">
+      Kevin Allen Cauley • June 19, 2026
+    </p>
+    
+    <h1 class="hero-title">Insights & Recommendations</h1>
+
+    <p class="hero-subtitle">
+      This page translates the modeling results into final findings, implementation considerations, limitations, and student-support recommendations. The focus is practical: how the analysis could help an institution identify academic risk earlier and respond before students fall further behind.
+    </p>
+
+  </div>
+
+  <div class="page-nav">
+    <a href="student_retention_results.html" class="nav-pill nav-back">← Back: Results</a>
+    <a href="index.html" class="nav-pill nav-home">Home</a>
+  </div>
+
+  <hr class="section-divider">
+
+  <h2>Page Overview</h2>
+
+  <div class="section-intro">
+    The EDA, modeling, and results pages established the technical workflow. This final page summarizes what the project found, what the model can support, what it should not be used for without additional validation, and how the findings could inform advising, tutoring, attendance follow-up, and financial-support review.
+  </div>
+
+  <div class="takeaway-box">
+    <b>Included in this page:</b> Final model recommendation • Key findings • Student-support recommendations • Risk review • Ethical considerations • Limitations • Next steps
+  </div>
+<div id="executive-summary" class="section level2">
+<h2>1. Executive Summary</h2>
+<div class="model-highlight-card">
+  <div class="model-badge">FINAL RECOMMENDATION</div>
+  <h3 class="model-title">Use Gradient Boosted Trees as the recommended model from this workflow.</h3>
+  <p class="model-subtitle">
+    This model produced the strongest testing-set performance in the saved results workflow. The model should be used as a decision-support tool for identifying students who may need review, not as an automated decision system.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Testing RMSE</span>
+      <span class="metric-value">5.012</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing R-Squared</span>
+      <span class="metric-value">0.765</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Testing MAE</span>
+      <span class="metric-value">2.826</span>
+    </div>
+  </div>
+</div>
+<p>The project started as an academic retention modeling exercise, but
+the workflow also mirrors a real institutional research problem. A
+university does not only need to know which students eventually stop
+out. It also needs earlier signals that a student may be struggling
+while there is still time to respond.</p>
+<p>In this project, <strong>FinalGrade</strong> was used as the primary
+modeling outcome. <strong>EnrollmentStatus</strong> was retained as a
+predictor and context variable rather than treated as the outcome. That
+structure supports a practical early-support frame: predict academic
+performance, identify risk patterns, and connect those patterns to
+possible intervention points.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Area
+</th>
+<th style="text-align:left;">
+Final_Takeaway
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Primary outcome
+</td>
+<td style="text-align:left;">
+FinalGrade was used as the numeric modeling target.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Best-performing model
+</td>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Primary evaluation metric
+</td>
+<td style="text-align:left;">
+Testing RMSE, supported by R-squared and MAE.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Main practical use
+</td>
+<td style="text-align:left;">
+Identify students who may benefit from academic support review.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Strongest signal group
+</td>
+<td style="text-align:left;">
+Grade-related predictors were the most direct performance signals.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Decision caution
+</td>
+<td style="text-align:left;">
+Predictions should support human review, not replace advising judgment.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="what-the-model-results-suggest" class="section level2">
+<h2>2. What the Model Results Suggest</h2>
+<p>The results support a straightforward conclusion: academic
+performance data contains strong signal for predicting final course
+outcomes. That is expected because earlier grade components are directly
+tied to final grade performance. However, the broader value of the
+project is not only the prediction itself. The value is in combining
+performance signals with attendance, financial, engagement, and
+support-service context so that the institution can decide what kind of
+help may be appropriate.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Finding
+</th>
+<th style="text-align:left;">
+What_It_Means
+</th>
+<th style="text-align:left;">
+Practical_Use
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Earlier academic performance was highly relevant.
+</td>
+<td style="text-align:left;">
+Grade components provide a direct signal of final course performance.
+</td>
+<td style="text-align:left;">
+Use early grade movement to prioritize academic check-ins.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Attendance remains important.
+</td>
+<td style="text-align:left;">
+Absence patterns give a behavioral signal that can be reviewed before
+final outcomes are known.
+</td>
+<td style="text-align:left;">
+Trigger attendance follow-up when absence patterns begin to increase.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Financial indicators add context.
+</td>
+<td style="text-align:left;">
+Scholarship percentage and past-due balance may help explain pressure
+around persistence and performance.
+</td>
+<td style="text-align:left;">
+Route students to financial-support review when needed.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Support-service variables need careful interpretation.
+</td>
+<td style="text-align:left;">
+High support usage may indicate both help-seeking behavior and
+underlying academic need.
+</td>
+<td style="text-align:left;">
+Use support usage as context rather than assuming it causes outcomes.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Model performance must be paired with human review.
+</td>
+<td style="text-align:left;">
+The model can rank risk, but it cannot understand each student’s full
+situation.
+</td>
+<td style="text-align:left;">
+Use predictions to support advising conversations, not to make automatic
+decisions.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="model-performance-in-context" class="section level2">
+<h2>3. Model Performance in Context</h2>
+<p>The recommended model improved on the baseline mean model by
+approximately <strong>51.5%</strong> in testing RMSE. That improvement
+matters because the baseline does not use student-level predictors. Any
+useful predictive model should perform better than simply assigning
+every student the average final grade.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:center;">
+Rank
+</th>
+<th style="text-align:left;">
+Model
+</th>
+<th style="text-align:left;">
+Recommendation_Role
+</th>
+<th style="text-align:right;">
+Testing_RMSE
+</th>
+<th style="text-align:right;">
+Testing_Rsquared
+</th>
+<th style="text-align:right;">
+Testing_MAE
+</th>
+<th style="text-align:right;">
+RMSE_Gap
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">
+1
+</td>
+<td style="text-align:left;">
+Gradient Boosted Trees
+</td>
+<td style="text-align:left;">
+Recommended final model
+</td>
+<td style="text-align:right;">
+5.012
+</td>
+<td style="text-align:right;">
+0.765
+</td>
+<td style="text-align:right;">
+2.826
+</td>
+<td style="text-align:right;">
+0.652
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+2
+</td>
+<td style="text-align:left;">
+Random Forest
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+5.264
+</td>
+<td style="text-align:right;">
+0.740
+</td>
+<td style="text-align:right;">
+2.886
+</td>
+<td style="text-align:right;">
+2.695
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+3
+</td>
+<td style="text-align:left;">
+Multiple Linear Regression
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+5.879
+</td>
+<td style="text-align:right;">
+0.676
+</td>
+<td style="text-align:right;">
+2.815
+</td>
+<td style="text-align:right;">
+1.064
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+4
+</td>
+<td style="text-align:left;">
+LASSO Regression
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+5.907
+</td>
+<td style="text-align:right;">
+0.673
+</td>
+<td style="text-align:right;">
+3.051
+</td>
+<td style="text-align:right;">
+0.926
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:left;">
+SVM Radial
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+6.212
+</td>
+<td style="text-align:right;">
+0.638
+</td>
+<td style="text-align:right;">
+3.386
+</td>
+<td style="text-align:right;">
+0.391
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+6
+</td>
+<td style="text-align:left;">
+GAM
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+6.596
+</td>
+<td style="text-align:right;">
+0.592
+</td>
+<td style="text-align:right;">
+2.616
+</td>
+<td style="text-align:right;">
+2.356
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+7
+</td>
+<td style="text-align:left;">
+Neural Network
+</td>
+<td style="text-align:left;">
+Secondary comparison
+</td>
+<td style="text-align:right;">
+9.593
+</td>
+<td style="text-align:right;">
+0.138
+</td>
+<td style="text-align:right;">
+4.151
+</td>
+<td style="text-align:right;">
+3.758
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+8
+</td>
+<td style="text-align:left;">
+Baseline Mean
+</td>
+<td style="text-align:left;">
+Reference only
+</td>
+<td style="text-align:right;">
+10.331
+</td>
+<td style="text-align:right;">
+0.000
+</td>
+<td style="text-align:right;">
+7.055
+</td>
+<td style="text-align:right;">
+0.220
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_insights_files/figure-html/04-performance-context-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="risk-review-from-predicted-grades" class="section level2">
+<h2>4. Risk Review from Predicted Grades</h2>
+<p>Predicted final grades can be translated into a support-review
+segment. This should not be interpreted as a final label on the student.
+It is simply a way to prioritize outreach when resources are
+limited.</p>
+<p><img src="student_retention_insights_files/figure-html/05-risk-review-plot-1.png" alt="" width="74%" style="display: block; margin: auto;" /></p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Predicted_Risk_Group
+</th>
+<th style="text-align:center;">
+Records
+</th>
+<th style="text-align:center;">
+Percent
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Predicted 70 or Higher
+</td>
+<td style="text-align:center;">
+1271
+</td>
+<td style="text-align:center;">
+96.4%
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Predicted Below 70
+</td>
+<td style="text-align:center;">
+47
+</td>
+<td style="text-align:center;">
+3.6%
+</td>
+</tr>
+</tbody>
+</table>
+<div class="takeaway-box">
+<p><b>Decision Use:</b> The predicted-risk segment should prompt review,
+not punishment. A student flagged by the model should receive
+support-oriented outreach, not an automatic negative action.</p>
+</div>
+</div>
+<div id="most-useful-predictors" class="section level2">
+<h2>5. Most Useful Predictors</h2>
+<p>The model results suggest that the strongest predictors are
+concentrated around academic progress, especially grade-related signals.
+This is not surprising. Earlier performance is often the most direct
+indicator of final performance. The more useful operational insight is
+that other variables help explain what kind of support may be
+needed.</p>
+<p>Top predictors from the model comparison included: <strong>Final Exam
+Grade, Major: Medicine, Major: Computer Science, Major: Civil
+Engineering, Semester: 10</strong>.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:center;">
+Aggregate_Rank
+</th>
+<th style="text-align:left;">
+Variable
+</th>
+<th style="text-align:center;">
+Models_Available
+</th>
+<th style="text-align:right;">
+Mean_Rank
+</th>
+<th style="text-align:right;">
+Mean_Importance
+</th>
+<th style="text-align:center;">
+Best_Rank
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">
+1
+</td>
+<td style="text-align:left;">
+Final Exam Grade
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+2.8
+</td>
+<td style="text-align:right;">
+87.514
+</td>
+<td style="text-align:center;">
+1
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+2
+</td>
+<td style="text-align:left;">
+Major: Medicine
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+8.6
+</td>
+<td style="text-align:right;">
+7.688
+</td>
+<td style="text-align:center;">
+2
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+3
+</td>
+<td style="text-align:left;">
+Major: Computer Science
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+8.8
+</td>
+<td style="text-align:right;">
+16.615
+</td>
+<td style="text-align:center;">
+3
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+4
+</td>
+<td style="text-align:left;">
+Major: Civil Engineering
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+9.8
+</td>
+<td style="text-align:right;">
+16.427
+</td>
+<td style="text-align:center;">
+4
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:left;">
+Semester: 10
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+12.4
+</td>
+<td style="text-align:right;">
+7.958
+</td>
+<td style="text-align:center;">
+6
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+6
+</td>
+<td style="text-align:left;">
+Major: Design
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+16.0
+</td>
+<td style="text-align:right;">
+11.733
+</td>
+<td style="text-align:center;">
+6
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+7
+</td>
+<td style="text-align:left;">
+Semester: 5
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+16.2
+</td>
+<td style="text-align:right;">
+15.000
+</td>
+<td style="text-align:center;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+8
+</td>
+<td style="text-align:left;">
+First Part Grade
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+16.4
+</td>
+<td style="text-align:right;">
+8.474
+</td>
+<td style="text-align:center;">
+3
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+9
+</td>
+<td style="text-align:left;">
+Semester: 8
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+17.6
+</td>
+<td style="text-align:right;">
+5.432
+</td>
+<td style="text-align:center;">
+10
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+10
+</td>
+<td style="text-align:left;">
+Second Part Grade
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+17.8
+</td>
+<td style="text-align:right;">
+9.939
+</td>
+<td style="text-align:center;">
+2
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+11
+</td>
+<td style="text-align:left;">
+Semester: 9
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+18.4
+</td>
+<td style="text-align:right;">
+2.609
+</td>
+<td style="text-align:center;">
+11
+</td>
+</tr>
+<tr>
+<td style="text-align:center;">
+12
+</td>
+<td style="text-align:left;">
+Major: Bioengineering
+</td>
+<td style="text-align:center;">
+5
+</td>
+<td style="text-align:right;">
+21.0
+</td>
+<td style="text-align:right;">
+4.801
+</td>
+<td style="text-align:center;">
+14
+</td>
+</tr>
+</tbody>
+</table>
+<p><img src="student_retention_insights_files/figure-html/06-top-predictors-plot-1.png" alt="" width="78%" style="display: block; margin: auto;" /></p>
+</div>
+<div id="recommended-student-support-actions" class="section level2">
+<h2>6. Recommended Student-Support Actions</h2>
+<p>The model does not directly prescribe an intervention. It identifies
+patterns that can help an advising or student-success team prioritize
+review. The strongest use case is to connect predicted academic risk
+with the type of support a student may need.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Signal
+</th>
+<th style="text-align:left;">
+What_To_Review
+</th>
+<th style="text-align:left;">
+Recommended_Action
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Low predicted final grade
+</td>
+<td style="text-align:left;">
+Academic performance pattern and course history
+</td>
+<td style="text-align:left;">
+Prioritize advising outreach and academic-success review.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Weak early grade components
+</td>
+<td style="text-align:left;">
+First and second grading-period performance
+</td>
+<td style="text-align:left;">
+Offer tutoring, instructor check-in, or course-specific academic
+support.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Increasing absences
+</td>
+<td style="text-align:left;">
+Attendance pattern across grading periods
+</td>
+<td style="text-align:left;">
+Trigger attendance follow-up before the student falls further behind.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Past-due balance or low financial support
+</td>
+<td style="text-align:left;">
+Account balance and aid context
+</td>
+<td style="text-align:left;">
+Route to financial-aid or student accounts review.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+High support-service usage
+</td>
+<td style="text-align:left;">
+Advising, tutoring, counseling, and formative plan activity
+</td>
+<td style="text-align:left;">
+Review whether current support is sufficient or needs adjustment.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Low engagement/course-experience indicators
+</td>
+<td style="text-align:left;">
+Teacher evaluation and course experience signals
+</td>
+<td style="text-align:left;">
+Review course-level friction, communication, and student experience.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="intervention-priority-framework" class="section level2">
+<h2>7. Intervention Priority Framework</h2>
+<p>A practical use of the model is not to label students as “good” or
+“bad.” A better use is to create a review queue. The table below
+translates model output into a support-priority framework.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Priority_Level
+</th>
+<th style="text-align:left;">
+Suggested_Criteria
+</th>
+<th style="text-align:left;">
+Response
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+High Priority
+</td>
+<td style="text-align:left;">
+Predicted FinalGrade below 70 or large negative performance trend
+</td>
+<td style="text-align:left;">
+Advisor review within the current term; tutoring and support-service
+referral as needed.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Moderate Priority
+</td>
+<td style="text-align:left;">
+Predicted FinalGrade near the risk threshold or worsening attendance
+</td>
+<td style="text-align:left;">
+Monitor progress and contact student if grades or attendance continue to
+decline.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Context Review
+</td>
+<td style="text-align:left;">
+Financial pressure, high support-service usage, or unusual data pattern
+</td>
+<td style="text-align:left;">
+Review account, advising, and support history before deciding next
+action.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Low Priority
+</td>
+<td style="text-align:left;">
+Predicted FinalGrade comfortably above threshold with stable attendance
+</td>
+<td style="text-align:left;">
+No immediate intervention; continue standard academic monitoring.
+</td>
+</tr>
+</tbody>
+</table>
+<div class="grid-3">
+
+  <div class="card">
+    <h4>Academic Support</h4>
+    <p>
+      Use early grade signals to prioritize tutoring, instructor follow-up, and advising conversations.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4>Attendance Follow-Up</h4>
+    <p>
+      Use absence patterns as an early behavioral signal that a student may need outreach.
+    </p>
+  </div>
+
+  <div class="card">
+    <h4>Financial Review</h4>
+    <p>
+      Use financial indicators as context for support, not as a stand-alone risk judgment.
+    </p>
+  </div>
+
+</div>
+</div>
+<div id="ethical-and-practical-considerations" class="section level2">
+<h2>8. Ethical and Practical Considerations</h2>
+<p>A student-retention model has to be handled carefully. The outcome is
+academic performance, but the consequences of poor implementation can
+affect real students. For that reason, the model should support human
+decision-making rather than replace it.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Concern
+</th>
+<th style="text-align:left;">
+Why_It_Matters
+</th>
+<th style="text-align:left;">
+Recommended_Control
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+False positives
+</td>
+<td style="text-align:left;">
+A student may be flagged even though they are not truly at risk.
+</td>
+<td style="text-align:left;">
+Use supportive outreach language and allow advisor review.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+False negatives
+</td>
+<td style="text-align:left;">
+A struggling student may not be flagged by the model.
+</td>
+<td style="text-align:left;">
+Do not rely only on model output; keep existing advising channels
+active.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Sensitive context variables
+</td>
+<td style="text-align:left;">
+Demographic or background variables can introduce fairness concerns.
+</td>
+<td style="text-align:left;">
+Audit performance by subgroup before operational use.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Financial indicators
+</td>
+<td style="text-align:left;">
+Financial variables may reflect structural barriers rather than student
+effort.
+</td>
+<td style="text-align:left;">
+Use them to route support, not to penalize students.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Data anomalies
+</td>
+<td style="text-align:left;">
+Grades above the expected range and extreme balances can affect model
+behavior.
+</td>
+<td style="text-align:left;">
+Review data-quality rules before production deployment.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Over-automation
+</td>
+<td style="text-align:left;">
+Automated labels can create stigma or poor decisions.
+</td>
+<td style="text-align:left;">
+Use predictions as a review queue, not as a final decision.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="limitations" class="section level2">
+<h2>9. Limitations</h2>
+<p>This project demonstrates a complete modeling workflow, but several
+limitations should be addressed before the model could be used
+operationally.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Limitation
+</th>
+<th style="text-align:left;">
+Impact
+</th>
+<th style="text-align:left;">
+Next_Step
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Single dataset snapshot
+</td>
+<td style="text-align:left;">
+The model may not generalize to future terms or other institutions.
+</td>
+<td style="text-align:left;">
+Validate on newer semesters and additional cohorts.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+FinalExamGrade included in full model
+</td>
+<td style="text-align:left;">
+The full model may be less useful for early intervention because final
+exam data arrives late.
+</td>
+<td style="text-align:left;">
+Use an early-warning version that excludes late-term variables.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Grade anomalies
+</td>
+<td style="text-align:left;">
+Values outside the expected 0-100 range can distort training and
+interpretation.
+</td>
+<td style="text-align:left;">
+Define institutional data-quality rules before deployment.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Support-service interpretation
+</td>
+<td style="text-align:left;">
+Support usage may indicate need, help-seeking behavior, or both.
+</td>
+<td style="text-align:left;">
+Interpret support-service variables with advising context.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+No live intervention testing
+</td>
+<td style="text-align:left;">
+The model predicts risk but does not prove which interventions work.
+</td>
+<td style="text-align:left;">
+Pilot interventions and measure outcomes over time.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Fairness not fully audited
+</td>
+<td style="text-align:left;">
+Model performance may differ across student groups.
+</td>
+<td style="text-align:left;">
+Evaluate subgroup performance before any operational rollout.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="what-i-would-do-next" class="section level2">
+<h2>10. What I Would Do Next</h2>
+<p>The next phase would move from model-building to model validation and
+intervention design. The model should be tested on newer student
+records, reviewed for fairness, and paired with a clear outreach
+process.</p>
+<table class="table table-striped table-hover table-condensed table-responsive" style="color: black; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Step
+</th>
+<th style="text-align:left;">
+Purpose
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Build an early-warning version
+</td>
+<td style="text-align:left;">
+Exclude late-arriving variables such as FinalExamGrade so the model can
+support earlier intervention.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Validate on future terms
+</td>
+<td style="text-align:left;">
+Confirm that the model performs consistently on newer student records.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Review subgroup performance
+</td>
+<td style="text-align:left;">
+Check whether prediction error differs by student group or program.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Create advisor-facing risk bands
+</td>
+<td style="text-align:left;">
+Translate predicted grades into practical review categories.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Pilot intervention workflows
+</td>
+<td style="text-align:left;">
+Test whether outreach, tutoring, advising, or financial review improves
+outcomes.
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Monitor model drift
+</td>
+<td style="text-align:left;">
+Re-check performance each term as students, courses, and institutional
+patterns change.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="final-conclusion" class="section level2">
+<h2>11. Final Conclusion</h2>
+<p>The strongest conclusion from this project is that student retention
+analytics should be treated as an early-support system, not just a
+reporting exercise. Predicting final academic performance can help
+identify students who may need help before course failure or
+disengagement becomes harder to reverse.</p>
+<p>The recommended model, <strong>Gradient Boosted Trees</strong>,
+provided the best testing-set performance in this workflow. However, the
+model is most valuable when paired with human review and practical
+intervention planning. Academic, attendance, financial, engagement, and
+support-service data all tell part of the story. The model helps
+organize those signals into a structured review process.</p>
+<div class="model-highlight-card">
+  <div class="model-badge">FINAL TAKEAWAY</div>
+  <h3 class="model-title">The model should support earlier conversations, not automated decisions.</h3>
+  <p class="model-subtitle">
+    The best use of this project is to help student-success teams identify who may need support, understand why they may need it, and respond while there is still time to improve the outcome.
+  </p>
+  <div class="model-metrics">
+    <div class="metric-box">
+      <span class="metric-label">Model Use</span>
+      <span class="metric-value">Decision Support</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Main Audience</span>
+      <span class="metric-value">Student Success Teams</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-label">Recommended Next Step</span>
+      <span class="metric-value">Early-Warning Pilot</span>
+    </div>
+  </div>
+</div>
+
+<div class="page-nav bottom-nav">
+  <a href="student_retention_results.html" class="nav-pill nav-back">← Back: Results</a>
+  <a href="index.html" class="nav-pill nav-home">Home</a>
+</div>
+
+  </div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

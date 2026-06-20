@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Student Retention Predictive Modeling | Kevin Cauley</title>
+
+<script src="index_files/header-attrs-2.31/header-attrs.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+
+
+
+
+<link rel="stylesheet" href="assets/styles.css" type="text/css" />
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Student Retention Predictive Modeling |
+Kevin Cauley</h1>
+
+
+
+<div class="main-container">
+  <div class="index-container">
+
+    <section class="student-hero">
+
+      <div class="student-hero-content">
+
+        <p class="hero-meta">
+          Kevin Allen Cauley • June 19, 2026
+        </p>
+
+        <h1 class="student-hero-title">Student Retention Predictive Modeling</h1>
+
+        <p class="student-hero-subtitle">
+          An applied analytics project using undergraduate student records to predict final course performance and identify academic risk patterns that can support earlier intervention.
+        </p>
+
+        <div class="hero-chip-row">
+          <span class="hero-chip">Higher Education Analytics</span>
+          <span class="hero-chip">Final Grade Prediction</span>
+          <span class="hero-chip">Academic Risk Review</span>
+        </div>
+
+      </div>
+
+      <aside class="student-hero-panel">
+
+        <div class="hero-stat-card">
+          <span class="hero-stat-label">Primary Outcome</span>
+          <span class="hero-stat-value">Final Grade</span>
+        </div>
+
+        <div class="hero-stat-card">
+          <span class="hero-stat-label">Decision Focus</span>
+          <span class="hero-stat-value">Student Support</span>
+        </div>
+
+        <div class="hero-stat-card">
+          <span class="hero-stat-label">Risk Frame</span>
+          <span class="hero-stat-value">Academic Risk</span>
+        </div>
+
+      </aside>
+
+    </section>
+
+    <section class="index-snapshot">
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Industry</span>
+        <span class="snapshot-value">Higher Education</span>
+      </div>
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Dataset</span>
+        <span class="snapshot-value">Undergraduate Records</span>
+      </div>
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Model Target</span>
+        <span class="snapshot-value">Final Grade</span>
+      </div>
+
+      <div class="snapshot-item">
+        <span class="snapshot-label">Use Case</span>
+        <span class="snapshot-value">Early Support</span>
+      </div>
+
+    </section>
+
+    <section class="index-overview">
+
+      <div class="overview-main">
+        <h2>Project Overview</h2>
+
+        <p>
+          This project analyzes undergraduate student data from Advance University to better understand the factors associated with academic performance and retention risk. The primary modeling outcome is final course grade, with enrollment status used as a predictor rather than the outcome.
+        </p>
+
+        <p>
+          The project is framed around an early-support workflow. Instead of waiting until a student stops out, the analysis looks for academic, attendance, financial, support-service, and engagement patterns that may indicate a need for follow-up.
+        </p>
+      </div>
+
+      <div class="overview-side">
+        <span class="overview-side-label">Core Focus</span>
+        <p>
+          Final grade prediction, academic-risk identification, model comparison, and student-support planning.
+        </p>
+      </div>
+
+    </section>
+
+    <div class="project-nav top-project-nav">
+      <a class="nav-next" href="student_retention_eda.html">Start with EDA →</a>
+    </div>
+
+    <hr class="section-divider">
+
+    <section class="pathway-section">
+
+      <div class="section-header-row">
+        <div>
+          <h2>Project Report Pathway</h2>
+          <p>
+            Follow the workflow from exploratory analysis through model development, results, and recommendations.
+          </p>
+        </div>
+      </div>
+
+      <div class="report-pathway">
+
+        <a href="student_retention_eda.html" class="pathway-row">
+          <div class="pathway-number">01</div>
+          <div class="pathway-content">
+            <h4>Exploratory Data Analysis</h4>
+            <p>
+              Review the dataset, variable roles, missing values, outliers, preprocessing decisions, feature engineering, and early patterns tied to final grade performance.
+            </p>
+          </div>
+          <div class="pathway-action">Open EDA →</div>
+        </a>
+
+        <a href="student_retention_modeling.html" class="pathway-row">
+          <div class="pathway-number">02</div>
+          <div class="pathway-content">
+            <h4>Predictive Modeling Strategy</h4>
+            <p>
+              Build the modeling workflow, including target selection, train/test split, centering and scaling, one-hot encoding, baseline comparison, and multiple model families.
+            </p>
+          </div>
+          <div class="pathway-action">Open Modeling →</div>
+        </a>
+
+        <a href="student_retention_results.html" class="pathway-row">
+          <div class="pathway-number">03</div>
+          <div class="pathway-content">
+            <h4>Model Results & Comparison</h4>
+            <p>
+              Compare cross-validation results, holdout performance, model hyperparameters, RMSE, R-squared, MAE, variable importance, and model ranking.
+            </p>
+          </div>
+          <div class="pathway-action">Open Results →</div>
+        </a>
+
+        <a href="student_retention_insights.html" class="pathway-row">
+          <div class="pathway-number">04</div>
+          <div class="pathway-content">
+            <h4>Insights & Recommendations</h4>
+            <p>
+              Translate model findings into practical guidance for advising, tutoring, financial support, attendance follow-up, and student support planning.
+            </p>
+          </div>
+          <div class="pathway-action">Open Insights →</div>
+        </a>
+
+      </div>
+
+    </section>
+
+    <hr class="section-divider">
+
+    <section class="capabilities-section">
+
+      <div class="section-header-row">
+        <div>
+          <h2>Capabilities Demonstrated</h2>
+          <p>
+            The project shows a complete analytics workflow from data preparation through model evaluation.
+          </p>
+        </div>
+      </div>
+
+      <div class="capability-pill-grid">
+
+        <div class="capability-pill">Data Cleaning</div>
+        <div class="capability-pill">Feature Engineering</div>
+        <div class="capability-pill">Exploratory Analysis</div>
+        <div class="capability-pill">Regression Modeling</div>
+        <div class="capability-pill">Model Comparison</div>
+        <div class="capability-pill">Cross-Validation</div>
+        <div class="capability-pill">Variable Importance</div>
+        <div class="capability-pill">Risk Segmentation</div>
+        <div class="capability-pill">Technical Reporting</div>
+
+      </div>
+
+    </section>
+
+    <hr class="section-divider">
+
+    <section class="index-closing">
+
+      <div class="closing-main">
+        <h2>Why This Project Matters</h2>
+
+        <p>
+          Student retention is not only an enrollment outcome. It is also an early-warning challenge. Academic performance, attendance, financial pressure, engagement, and support-service usage can all provide signals that a student may need help before they disengage.
+        </p>
+      </div>
+
+      <div class="closing-outcome">
+        <span>Outcome</span>
+        <p>
+          A practical analytics workflow for predicting student academic performance, identifying risk patterns, and recommending targeted retention-support actions.
+        </p>
+      </div>
+
+    </section>
+
+    <div class="project-nav bottom-project-nav">
+      <a class="nav-next" href="student_retention_eda.html">Start with EDA →</a>
+    </div>
+
+  </div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

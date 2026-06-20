@@ -1,0 +1,2366 @@
+---
+title: "Exploratory Data Analysis | HR Workforce Analytics"
+
+output:
+  html_document:
+    always_allow_html: true
+    self_contained: false
+    toc: false
+    toc_float: false
+    theme: null
+    highlight: null
+    df_print: paged
+    fig_caption: true
+    css: assets/styles.css
+
+number_sections: false
+---
+
+```{r 00-setup, include=FALSE}
+source(here::here("analysis", "helper.R"))
+
+PLOT_SUBFOLDER <- "eda"
+
+cat("Using plot folder:", PLOT_SUBFOLDER, "\n")
+
+library(conflicted)
+library(glue)
+library(tidyverse)
+library(reshape2)
+library(readxl)
+library(here)
+library(janitor)
+library(psych)
+library(GGally)
+library(car)
+library(e1071)
+library(fastDummies)
+library(scales)
+library(patchwork)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(corrplot)
+library(ggcorrplot)
+library(naniar)
+library(DT)
+library(htmltools)
+
+conflicts_prefer(
+  dplyr::filter,
+  dplyr::select,
+  dplyr::slice,
+  dplyr::mutate,
+  dplyr::arrange,
+  dplyr::lag,
+  dplyr::rename,
+  scales::alpha,
+  ggplot2::margin
+)
+
+set.seed(123)
+
+knitr::opts_knit$set(root.dir = here::here())
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  out.width = "100%",
+  fig.retina = 2,
+  fig.width = 8.5,
+  fig.height = 5.5,
+  dpi = 300,
+  cache = FALSE,
+  dev = "png"
+)
+
+hr_palette <- list(
+  primary = "#5FA8D3",
+  secondary = "#F4A261",
+  danger = "#D7263D",
+  success = "#2A9D8F",
+  neutral = "#6C757D"
+)
+```
+
+```{r 00-install-packages, include=FALSE}
+required_packages <- c(
+  "conflicted",
+  "glue",
+  "tidyverse",
+  "reshape2",
+  "readxl",
+  "here",
+  "broom",
+  "DT",
+  "knitr",
+  "kableExtra",
+  "janitor",
+  "skimr",
+  "corrplot",
+  "ggcorrplot",
+  "GGally",
+  "psych",
+  "randomcoloR",
+  "RColorBrewer",
+  "ggthemes",
+  "patchwork",
+  "cowplot",
+  "gridExtra",
+  "htmltools",
+  "car",
+  "e1071",
+  "fastDummies",
+  "naniar",
+  "scales"
+)
+
+missing_packages <- required_packages[
+  !required_packages %in% installed.packages()[, "Package"]
+]
+
+if (length(missing_packages) > 0) {
+  stop("Missing packages: ", paste(missing_packages, collapse = ", "))
+}
+```
+
+```{r 00-import-data, include=FALSE}
+file_path <- here("data", "raw", "HR_Data.xlsx")
+
+data_demographics <- read_excel(file_path, sheet = "Data & Demographics")
+data_metrics <- read_excel(file_path, sheet = "Metrics")
+data_satisfaction <- read_excel(file_path, sheet = "Satisfaction")
+data_wellness <- read_excel(file_path, sheet = "Wellness")
+data_monitoring <- read_excel(file_path, sheet = "Monitoring")
+data_privacy <- read_excel(file_path, sheet = "Privacy")
+data_attrition <- read_excel(file_path, sheet = "Attrition")
+```
+
+```{r 00-merge-datasets, include=FALSE}
+hr_df <- data_demographics %>%
+  left_join(data_metrics, by = "Employee_ID") %>%
+  left_join(data_satisfaction, by = "Employee_ID") %>%
+  left_join(data_wellness, by = "Employee_ID") %>%
+  left_join(data_monitoring, by = "Employee_ID") %>%
+  left_join(data_privacy, by = "Employee_ID") %>%
+  left_join(data_attrition, by = "Employee_ID") %>%
+  select(
+    -Employee_ID,
+    -First_Name,
+    -Last_Name,
+    -Voluntary_Resignation,
+    -Involuntary_Termination
+  ) %>%
+  janitor::clean_names() %>%
+  mutate(across(where(is.character), as.factor)) %>%
+  mutate(
+    across(
+      c(turnover_intention, quiet_quitting, monitoring_turnover_risk),
+      ~ factor(trimws(as.character(.x)), levels = c("No", "Yes"))
+    )
+  )
+
+data <- hr_df
+
+dir.create(here("data", "processed"), recursive = TRUE, showWarnings = FALSE)
+
+saveRDS(hr_df, here("data", "processed", "hr_dataset_clean.rds"))
+```
+
+```{r 00-base-dataset, include=FALSE}
+# Create a reusable, self-contained base dataset
+get_hr_df <- function() {
+  hr_df %>%
+    mutate(across(where(is.character), as.factor))
+}
+
+base_df <- get_hr_df()
+
+# Safe numeric selector
+safe_numeric <- function(df) {
+  df %>%
+    select(where(is.numeric)) %>%
+    select(where(~ var(.x, na.rm = TRUE) > 0)) %>%
+    tidyr::drop_na()
+}
+
+# Safe factor dummy builder
+safe_dummies <- function(df) {
+  df %>%
+    select(where(is.factor)) %>%
+    fastDummies::dummy_cols(
+      remove_first_dummy = TRUE,
+      remove_selected_columns = TRUE
+    ) %>%
+    select(where(~ var(.x, na.rm = TRUE) > 0)) %>%
+    tidyr::drop_na()
+}
+
+# Numeric data frame helper
+get_numeric_df <- function(df) {
+  df %>%
+    select(where(is.numeric)) %>%
+    select(where(~ var(.x, na.rm = TRUE) > 0))
+}
+```
+
+```{r 00-metadata-tables, fig.show="hold", include=FALSE}
+employee_data_demo_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Employee_ID", "Character", "Nominal", "Identifier/Drop",
+  "First_Name", "Character", "Nominal", "Identifier/Drop",
+  "Last_Name", "Character", "Nominal", "Identifier/Drop",
+  "Occupation", "Categorical", "Nominal", "Predictor",
+  "Department", "Categorical", "Nominal", "Predictor",
+  "Average_Salary", "Numeric", "Ratio", "Predictor",
+  "Tenure_Years", "Numeric", "Ratio", "Predictor",
+  "Seniority", "Categorical", "Ordinal", "Predictor",
+  "Work_Arrangement", "Categorical", "Nominal", "Predictor",
+  "Distance_From_Home", "Numeric", "Ratio", "Predictor",
+  "Age_Group", "Categorical", "Ordinal", "Predictor",
+  "Gender", "Categorical", "Nominal", "Predictor",
+  "Race", "Categorical", "Nominal", "Predictor",
+  "Ethnicity", "Categorical", "Nominal", "Predictor")
+
+employee_metrics_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Actual_Training_Hours", "Numeric", "Ratio", "Predictor",
+  "Overtime_Hours", "Numeric", "Ratio", "Predictor",
+  "Performance_Score", "Numeric", "Ordinal", "Predictor",
+  "Productivity_Score", "Numeric", "Ordinal", "Predictor",
+  "Discretionary_Effort", "Numeric", "Ordinal", "Predictor",
+  "Engagement_Level", "Numeric", "Ordinal", "Predictor",
+  "Organizational_Commitment", "Numeric", "Ordinal", "Predictor",
+  "Role_Clarity", "Numeric", "Ordinal", "Predictor")
+
+employee_satisfaction_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Job_Satisfaction", "Numeric", "Ordinal", "Predictor",
+  "Workplace_Environment_Satisfaction", "Numeric", "Ordinal", "Predictor",
+  "Work_Life_Balance_Satisfaction", "Numeric", "Ordinal", "Predictor",
+  "Perceived_Organizational_Support", "Numeric", "Ordinal", "Predictor",
+  "Relationship_With_Manager", "Numeric", "Ordinal", "Predictor",
+  "Relationship_With_Coworkers", "Numeric", "Ordinal", "Predictor",
+  "Team_Collaboration", "Numeric", "Ordinal", "Predictor",
+  "Perceived_Career_Growth_Opportunities", "Numeric", "Ordinal", "Predictor",
+  "Promotion_Opportunity", "Numeric", "Ordinal", "Predictor",
+  "Learning_Opportunities", "Numeric", "Ordinal", "Predictor",
+  "Manager_Support_Score", "Numeric", "Ordinal", "Predictor",
+  "Perceived_Fairness_Score", "Numeric", "Ordinal", "Predictor",
+  "Trust_In_Management", "Numeric", "Ordinal", "Predictor",
+  "Job_Involvement", "Numeric", "Ordinal", "Predictor",
+  "Recognition_Score", "Numeric", "Ordinal", "Predictor",
+  "Voice_In_Decision_Making", "Numeric", "Ordinal", "Predictor",
+  "Alignment_With_Mission", "Numeric", "Ordinal", "Predictor",
+  "Manager_Communication_Quality", "Numeric", "Ordinal", "Predictor",
+  "Feeling_Valued_At_Work", "Numeric", "Ordinal", "Predictor")
+
+employee_wellness_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Burnout_Score", "Numeric", "Ordinal", "Future Target",
+  "Wellbeing_Score", "Numeric", "Ordinal", "Future Target",
+  "Anxiety_Level", "Numeric", "Ordinal", "Predictor",
+  "Depression_Level", "Numeric", "Ordinal", "Predictor",
+  "Stress_Level", "Numeric", "Ordinal", "Predictor",
+  "Mental_Health_Days_Taken", "Numeric", "Ratio", "Predictor",
+  "Absenteeism_Due_To_Mental_Health", "Numeric", "Ratio", "Predictor",
+  "Access_To_Counseling", "Categorical", "Nominal", "Predictor",
+  "Workload_Pressure", "Numeric", "Ordinal", "Predictor",
+  "Coping_Skills", "Numeric", "Ordinal", "Predictor",
+  "Peer_Support", "Numeric", "Ordinal", "Predictor",
+  "Manager_Empathy", "Numeric", "Ordinal", "Predictor",
+  "Leadership_Style", "Categorical", "Nominal", "Predictor",
+  "Stressors_Experienced", "Numeric", "Ratio", "Predictor")
+
+employee_monitoring_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Time_Tracking_Method_Used", "Categorical", "Nominal", "Predictor",
+  "Surveillance_Method_Used", "Categorical", "Nominal", "Predictor",
+  "Total_Monitoring_Tools", "Numeric", "Ratio", "Predictor",
+  "Monitoring_Frequency", "Numeric", "Ordinal", "Predictor",
+  "Monitoring_Intrusiveness", "Numeric", "Ordinal", "Predictor",
+  "Monitoring_Productivity_Impact", "Numeric", "Ordinal", "Predictor",
+  "Monitoring_Satisfaction_Impact", "Numeric", "Ordinal", "Predictor",
+  "Violations_Logged_By_Monitoring_Software", "Numeric", "Ratio", "Predictor",
+  "Perceived_Monitoring_Purpose", "Categorical", "Nominal", "Predictor",
+  "AI_Supervision", "Categorical", "Nominal", "Predictor")
+
+employee_privacy_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Monitoring_Transparency", "Numeric", "Ordinal", "Predictor",
+  "Privacy_Concern_Score", "Numeric", "Ordinal", "Target",
+  "Perceived_Intrusiveness", "Numeric", "Ordinal", "Predictor",
+  "Trust_In_Monitoring", "Numeric", "Ordinal", "Predictor",
+  "Privacy_Complaints_Score", "Numeric", "Ratio", "Target")
+
+employee_attrition_meta <- tribble(
+  ~Variable, ~Type, ~Measurement, ~Purpose,
+  "Turnover_Intention", "Categorical", "Nominal", "Target",
+  "Voluntary_Resignation", "Categorical", "Nominal", "Drop",
+  "Involuntary_Termination", "Categorical", "Nominal", "Drop",
+  "Quiet_Quitting", "Categorical", "Nominal", "Target",
+  "Employer_Promise_Broken", "Numeric", "Ordinal", "Predictor",
+  "Internal_Job_Applications", "Numeric", "Ratio", "Predictor",
+  "Promotion_Last_12_Months", "Categorical", "Nominal", "Predictor",
+  "Monitoring_Turnover_Risk", "Categorical", "Nominal", "Target")
+```
+
+```{=html}
+<div class="report-container">
+
+  <div class="page-layout">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-card">
+        <div class="sidebar-label">On this page</div>
+        <nav class="sidebar-nav">
+          <a href="#intro">Introduction</a>
+          <a href="#why-eda-matters">Why This Matters</a>
+          <a href="#eda-objectives">Objectives</a>
+          <a href="#data-overview">Data Overview</a>
+          <a href="#data-prep">Preparation</a>
+          <a href="#workforce-analysis">Workforce Analysis</a>
+          <a href="#correlation-analysis">Correlation Analysis</a>
+          <a href="#target-analysis">Target Variables</a>
+          <a href="#vif-section">Model Stability</a>
+          <a href="#imbalance-section">Imbalance Diagnostics</a>
+          <a href="#transition">Model Transition</a>
+          <a href="#strategic-takeaways">Strategic Takeaways</a>
+          <a href="#eda-summary">Summary Findings</a>
+        </nav>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <div class="hero-section">
+        <p class="hero-meta">
+          Kevin Allen Cauley • `r format(Sys.Date(), '%B %d, %Y')`
+        </p>
+
+        <h1 class="hero-title">Exploratory Data Analysis</h1>
+        
+        <p class="hero-subtitle">
+          This section evaluates workforce structure, variable distributions, class balance, correlation patterns, and multicollinearity to confirm that the synthetic HR dataset is analytically sound and ready for predictive modeling.
+        </p>
+        
+      </div>
+
+      <div class="cta-row">
+        <a href="index.html" class="cta-btn btn-blue">← Back Home</a>
+        <a href="hr_data_modeling_baseline.html" class="cta-btn btn-teal">Next: Baseline →</a>
+      </div>
+```
+
+# Introduction {#intro}
+
+Organizations increasingly rely on workforce data to inform decisions related to retention, performance, employee well-being, and organizational risk. In practice, however, access to real-world HR data is often limited by privacy concerns, governance requirements, and legal constraints.
+
+This project addresses that challenge by using a research-informed synthetic dataset designed to reflect realistic organizational dynamics without exposing real employee information.
+
+The purpose of this exploratory analysis is not only to summarize the dataset, but to demonstrate how workforce data can move through a full analytical pipeline: from structural validation and distributional assessment to relationship analysis and predictive readiness.
+
+The analysis centers on three workforce outcomes that are especially relevant in modern organizational settings:
+
+- Employee turnover intention  
+- Quiet quitting behavior  
+- Monitoring-related turnover risk  
+
+By combining labor-informed attributes, employee perception measures, behavioral indicators, and monitoring/privacy variables, this EDA establishes the empirical foundation for downstream predictive modeling.
+
+# Why This Analysis Matters {#why-eda-matters}
+
+Workforce analytics can help organizations move from reactive people decisions to earlier, evidence-based intervention. Understanding how employee sentiment, behavioral strain, and workplace conditions interact is essential for reducing attrition risk and supporting healthier organizational performance.
+
+Organizations that fail to monitor these patterns may face:
+
+- Higher turnover costs  
+- Lower productivity  
+- Reduced employee trust  
+- Weaker engagement and retention outcomes  
+
+This analysis is especially important because it examines not only traditional HR constructs such as satisfaction and commitment, but also newer workplace concerns related to monitoring, privacy, and perceived intrusiveness.
+
+The goal is to show how structured exploratory analysis can surface meaningful workforce patterns before model development begins, ensuring that later predictive results are grounded in realistic and interpretable data.
+
+# Exploratory Analysis Objectives {#eda-objectives}
+
+The goal of the exploratory data analysis phase is to evaluate whether the synthetic HR dataset is structurally sound, behaviorally realistic, and suitable for predictive modeling.
+
+The analysis focuses on four objectives:
+
+- **Assess variable distributions** across continuous, ordinal, and categorical employee measures to understand how workforce behaviors are spread across the dataset.
+- **Identify potential data quality concerns**, including missing values, unusual distributional shapes, and extreme observations.
+- **Evaluate predictor relationships**, with particular attention to correlation patterns and multicollinearity that may affect model stability.
+- **Examine imbalance and skewness**, especially in workforce outcomes and behavioral measures, to inform resampling and modeling strategy.
+
+Together, these steps validate the dataset and establish a clear link between exploratory diagnostics and downstream machine learning decisions.
+
+# Data Overview {#data-overview}
+
+The dataset used in this analysis is a synthetic workforce dataset informed by labor-market structure, organizational behavior research, and employee experience constructs commonly used in HR analytics.
+
+It includes employee demographics, job context, engagement and satisfaction measures, mental health indicators, monitoring and privacy perceptions, and workforce outcome variables related to turnover and disengagement.
+
+Rather than representing arbitrary synthetic values, the dataset was designed to preserve realistic variation and plausible relationships between employee characteristics, workplace experiences, and organizational risk outcomes.
+
+These variables collectively support exploratory analysis of workforce behavior and provide the feature space for later predictive modeling of turnover intention, quiet quitting, and monitoring-related attrition risk.
+
+## Data Dictionary
+
+The following metadata tables document the structure of the synthetic HR dataset.
+
+Each variable is described according to:
+
+-   Variable name
+-   Data type
+-   Measurement level
+-   Modeling role (predictor, target, or excluded variable)
+
+Documenting these attributes improves transparency and ensures reproducibility in later modeling stages.
+
+```{r 02-data-dictionary, results='asis'}
+
+render_dict_table <- function(df, title) {
+
+  table_html <- df %>%
+    kable("html", escape = FALSE) %>%
+    kable_styling(
+      full_width = TRUE,
+      bootstrap_options = c("striped", "hover", "condensed")
+    ) %>%
+    row_spec(0, bold = TRUE, color = "white", background = "#2F5D50") %>%
+    column_spec(1, bold = TRUE) %>%
+    as.character()
+
+  htmltools::div(
+    class = "table-card",
+    htmltools::h4(title),
+    htmltools::div(
+      class = "table-scroll",
+      HTML(table_html)
+    )
+  )
+}
+
+render_dict_table(employee_data_demo_meta, "1. Data & Demographics")
+render_dict_table(employee_metrics_meta, "2. Metrics")
+render_dict_table(employee_satisfaction_meta, "3. Satisfaction")
+render_dict_table(employee_wellness_meta, "4. Wellness")
+render_dict_table(employee_monitoring_meta, "5. Monitoring")
+render_dict_table(employee_privacy_meta, "6. Privacy")
+render_dict_table(employee_attrition_meta, "7. Attrition")
+```
+
+### Workforce Dataset Overview
+
+This section provides a high-level summary of the workforce dataset used in the analysis. 
+Understanding the scale and structure of the data is essential before exploring deeper relationships. 
+The dataset was designed to reflect realistic organizational conditions, including a diverse set of employee attributes and behavioral indicators. 
+These characteristics ensure the dataset is suitable for both exploratory analysis and predictive modeling.
+
+```{r 02-dataset-preview, echo=FALSE}
+library(DT)
+
+DT::datatable(
+  head(base_df, 25),
+  options = list(
+    pageLength = 8,
+    scrollX = TRUE,
+    scrollY = "360px",
+    autoWidth = TRUE,
+    dom = "tip"
+  ),
+  class = "stripe hover compact"
+)
+```
+
+### Dataset Structure
+
+Before performing statistical analysis, it is important to verify the structure and data types of each variable. 
+This step ensures that variables are correctly formatted for modeling and helps identify potential data quality issues such as missing values. 
+A clear understanding of variable types also informs appropriate visualization and transformation strategies.
+
+```{r summary-stats, results='asis'}
+library(dplyr)
+library(psych)
+library(knitr)
+library(kableExtra)
+
+numeric_data <- safe_numeric(base_df)
+
+summary_df <- psych::describe(numeric_data) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("Variable") %>%
+  select(Variable, mean, sd, min, max, skew) %>%
+  mutate(
+    Variable = clean_label(Variable)
+  )
+
+table_html <- summary_df %>%
+  kable("html", digits = 2) %>%
+  kable_styling(
+    full_width = TRUE,
+    bootstrap_options = c("striped", "hover", "condensed")
+  ) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "#2F5D50") %>%
+  column_spec(1, bold = TRUE) %>%
+  as.character()
+
+htmltools::div(
+  class = "card",
+  htmltools::h4("Summary Statistics"),
+  htmltools::div(
+    class = "table-scroll",
+    HTML(table_html)
+  )
+)
+```
+
+## Variable Definitions
+
+To support downstream analysis, variables are grouped into numeric predictors, categorical predictors, categorical targets, and numeric target-like outcome measures.
+
+This grouping serves two purposes. First, it ensures that variables are explored using appropriate descriptive and graphical methods. Second, it supports later modeling workflows by distinguishing between predictors, outcomes, and variables that may require special treatment during preprocessing.
+
+```{r 03-factor-conversion, echo=FALSE}
+hr_df <- base_df
+```
+
+```{r 03-define-variable-groups, echo=FALSE}
+num_vars <- c(
+  "average_salary", "tenure_years", "distance_from_home", "actual_training_hours",
+  "overtime_hours", "mental_health_days_taken", "absenteeism_due_to_mental_health",
+  "stressors_experienced", "violations_logged_by_monitoring_software",
+  "privacy_complaints_score", "burnout_score", "wellbeing_score", "anxiety_level",
+  "depression_level", "stress_level", "performance_score", "productivity_score",
+  "discretionary_effort", "engagement_level", "organizational_commitment",
+  "role_clarity", "job_satisfaction", "workplace_environment_satisfaction",
+  "work_life_balance_satisfaction", "perceived_organizational_support",
+  "relationship_with_manager", "relationship_with_coworkers", "team_collaboration",
+  "perceived_career_growth_opportunities", "promotion_opportunity",
+  "learning_opportunities", "manager_support_score", "perceived_fairness_score",
+  "trust_in_management", "job_involvement", "recognition_score",
+  "voice_in_decision_making", "alignment_with_mission",
+  "manager_communication_quality", "feeling_valued_at_work",
+  "monitoring_frequency", "monitoring_intrusiveness",
+  "monitoring_productivity_impact", "monitoring_satisfaction_impact",
+  "monitoring_transparency", "privacy_concern_score",
+  "trust_in_monitoring", "workload_pressure", "coping_skills",
+  "peer_support", "manager_empathy"
+)
+
+cat_vars <- c(
+  "age_group", "gender", "race", "ethnicity", "occupation", "department", "seniority",
+  "work_arrangement", "time_tracking_method_used", "surveillance_method_used",
+  "access_to_counseling", "leadership_style", "perceived_monitoring_purpose",
+  "ai_supervision", "promotion_last_12_months"
+)
+
+cat_target_vars <- c(
+  "turnover_intention", "quiet_quitting", "monitoring_turnover_risk"
+)
+
+num_target_vars <- c(
+  "burnout_score", "wellbeing_score", "privacy_concern_score", "privacy_complaints_score"
+)
+
+expected_vars <- unique(c(num_vars, cat_vars, cat_target_vars, num_target_vars))
+missing_vars <- setdiff(expected_vars, names(hr_df))
+
+if (length(missing_vars) > 0) {
+  stop("Missing variables: ", paste(missing_vars, collapse = ", "))
+}
+```
+
+## Variable Validation
+
+This validation step confirms that all expected predictor and target variables are present in the merged dataset before exploratory analysis continues.
+
+Performing this check early helps prevent silent downstream issues in visualization, feature engineering, and modeling by ensuring that the analytical dataset matches the intended project design.
+
+# Data Engineering & Preparation {#data-prep}
+
+Before exploratory analysis begins, the dataset must be checked for structural consistency and prepared for statistical use.
+
+This preparation stage focuses on:
+
+- Converting variables into appropriate analytical types  
+- Verifying that expected workforce attributes were successfully merged  
+- Preserving target-variable level ordering for later classification workflows  
+- Creating a reusable base dataset for self-contained analysis chunks  
+
+These steps do not materially alter the underlying workforce signals, but they ensure that later diagnostics and predictive models are built on a stable and reproducible analytical foundation.
+
+## Data Preprocessing
+
+Character variables are converted to factor representations where appropriate so they can be handled correctly in categorical summaries, visualization, encoding workflows, and predictive modeling.
+
+This preprocessing step also ensures consistency across self-contained chunks, which is especially important for a multi-section analytical report intended for reproducible site rendering.
+
+# Exploratory Workforce Analysis {#workforce-analysis}
+
+This section examines the distributional behavior of the workforce dataset across continuous, ordinal, and categorical measures.
+
+The aim is to identify:
+
+- How employee values are distributed across key measures  
+- Which variables show strong skewness or concentration  
+- Where outliers may reflect meaningful employee subgroups  
+- Whether the observed patterns resemble realistic workforce behavior  
+
+These diagnostics provide the descriptive foundation for interpreting later correlation, stability, and target-relationship results.
+
+## Variable Type Classification
+
+Before plotting, numeric variables are divided into likely continuous variables and Likert-style variables based on the number of distinct observed values.
+
+This distinction matters because variables measured on a wide numeric scale are best interpreted through histograms and density plots, while ordinal response-style variables are more appropriately summarized with count-based displays.
+
+```{r 04-variable-type-classification, echo=FALSE}
+hr_df <- base_df
+
+numeric_vars <- hr_df %>%
+  select(where(is.numeric)) %>%
+  select(where(~ var(.x, na.rm = TRUE) > 0))
+
+continuous_vars <- numeric_vars %>%
+  select(where(~ dplyr::n_distinct(.x, na.rm = TRUE) > 15)) %>%
+  names()
+
+likert_vars <- setdiff(names(numeric_vars), continuous_vars)
+```
+
+## Variable Classification
+
+For exploratory purposes, variables are organized into four practical groups based on both measurement scale and analytical role:
+
+- **Continuous variables**, such as salary, tenure, distance, and workload-related measures  
+- **Likert-style variables**, which capture employee perceptions, sentiment, support, and engagement  
+- **Categorical variables**, which describe workforce composition and organizational context  
+- **Target variables**, which represent the key organizational outcomes modeled later in the project  
+
+This classification framework ensures that each variable group is explored using methods aligned with the type of signal it contains.
+
+```{r 04-variable-selection, include=FALSE}
+hr_df <- base_df
+
+numeric_df <- get_numeric_df(hr_df)
+
+continuous_vars <- numeric_df %>%
+  select(where(~ dplyr::n_distinct(.x, na.rm = TRUE) > 15)) %>%
+  names()
+
+top_continuous <- numeric_df %>%
+  summarise(across(all_of(continuous_vars), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "name", values_to = "value") %>%
+  arrange(desc(value)) %>%
+  slice_head(n = 6) %>%
+  pull(name)
+
+likert_vars <- numeric_df %>%
+  select(where(~ is.numeric(.x) && max(.x, na.rm = TRUE) <= 7)) %>%
+  names()
+
+top_likert <- numeric_df %>%
+  summarise(across(all_of(likert_vars), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "name", values_to = "value") %>%
+  arrange(desc(value)) %>%
+  slice_head(n = 6) %>%
+  pull(name)
+
+top_outliers <- top_likert
+```
+
+## Continuous Variable Distributions
+
+We use histogram and density plots to inspect the spread and shape of continuous variables.
+
+```{r 04-continuous-distributions, echo=FALSE}
+hr_df <- base_df
+
+numeric_df <- get_numeric_df(hr_df)
+
+continuous_vars <- numeric_df %>%
+  select(where(~ dplyr::n_distinct(.x, na.rm = TRUE) > 15)) %>%
+  names()
+
+top_continuous <- numeric_df %>%
+  summarise(across(all_of(continuous_vars), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "name", values_to = "value") %>%
+  arrange(desc(value)) %>%
+  slice_head(n = 5) %>%
+  pull(name)
+
+plots <- lapply(top_continuous, function(var) {
+  ggplot(hr_df, aes(x = .data[[var]])) +
+    geom_histogram(
+      fill = hr_palette$primary,
+      bins = 30,
+      alpha = 0.85,
+      color = "white",
+      linewidth = 0.15
+    ) +
+    labs(
+      title = clean_label(var),
+      x = NULL,
+      y = "Employee Count"
+    ) +
+    theme_hr(10) +
+    theme(
+      plot.title = element_text(face = "bold", size = 12),
+      axis.title.y = element_text(size = 9),
+      axis.text = element_text(size = 8.5),
+      panel.grid.minor = element_blank()
+    )
+})
+
+p <- patchwork::wrap_plots(plots, ncol = 3)
+
+print(p)
+
+save_plot(
+  p,
+  "continuous_distributions.png",
+  width = 8.8,
+  height = 5.4
+)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Continuous workforce variables exhibit substantial variability, with most distributions showing clear right-skew rather than normal symmetry.
+</p>
+
+<p>
+In particular, variables such as <b>tenure years, overtime hours, and distance from home</b> display heavy right tails, indicating that extreme values are concentrated among a smaller subset of employees.
+</p>
+
+<p>
+Only a limited number of variables (e.g., training-related measures) approach a more symmetric distribution, suggesting that workforce behavior is not evenly distributed across employees.
+</p>
+
+<p>
+These patterns reflect realistic organizational dynamics and support the use of robust or non-linear modeling approaches, particularly tree-based methods.
+</p>
+
+</div>
+```
+
+## Likert Scale Variable Distributions
+
+Likert-scale variables are plotted as bar charts to show the distribution of employee attitudes, perceptions, and satisfaction levels.
+
+```{r 04-likert-distributions, echo=FALSE}
+hr_df <- base_df
+
+numeric_df <- get_numeric_df(hr_df)
+
+likert_vars <- numeric_df %>%
+  select(where(~ max(.x, na.rm = TRUE) <= 7)) %>%
+  names()
+
+top_likert <- numeric_df %>%
+  summarise(across(all_of(likert_vars), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "name", values_to = "value") %>%
+  arrange(desc(value)) %>%
+  slice_head(n = 6) %>%
+  pull(name)
+
+plots <- lapply(top_likert, function(var) {
+  df <- hr_df %>%
+    filter(!is.na(.data[[var]])) %>%
+    count(.data[[var]]) %>%
+    mutate(category = factor(.data[[var]]))
+
+  ggplot(df, aes(x = category, y = n, fill = n)) +
+    geom_col() +
+    scale_fill_gradient(low = "#A8DADC", high = "#1D3557") +
+    labs(title = clean_label(var), x = "Response", y = "Count") +
+    theme_hr(10) +
+    theme(
+      axis.text.x = element_text(size = 8),
+      legend.position = "none"
+    )
+})
+
+p <- patchwork::wrap_plots(plots, ncol = 3)
+
+print(p)
+save_plot(p, "likert_distributions.png", 8.5, 5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Likert-scale variables show meaningful variation across response levels, with most distributions centered around mid-to-high values (3–5).
+</p>
+
+<p>
+This indicates that employee perceptions are neither uniform nor extreme, but instead reflect a realistic spread of engagement, satisfaction, and organizational attitudes.
+</p>
+
+<p>
+The presence of variation across these measures provides strong signal for predictive modeling, particularly for behavioral outcomes such as turnover and disengagement.
+</p>
+
+</div>
+```
+
+## Outlier Detection
+
+Outlier analysis helps distinguish between unusual observations that reflect realistic workforce variation and values that might indicate instability or distortion in the dataset.
+
+In this context, the goal is not to eliminate extreme values automatically, but to determine whether concentrated high or low responses are plausible given the behavioral and survey-based nature of the variables.
+
+Because many of the measures are ordinal and perception-driven, wider spread at certain response levels may represent meaningful employee segmentation rather than data problems.
+
+### Likert Variables (Outliers)
+
+```{r 04-outliers, echo=FALSE}
+hr_df <- base_df
+
+numeric_df <- get_numeric_df(hr_df)
+
+likert_vars <- numeric_df %>%
+  select(where(~ is.numeric(.x) && max(.x, na.rm = TRUE) <= 7)) %>%
+  names()
+
+top_outliers <- numeric_df %>%
+  summarise(across(all_of(likert_vars), ~ var(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "name", values_to = "value") %>%
+  arrange(desc(value)) %>%
+  slice_head(n = 6) %>%
+  pull(name)
+
+likert_long <- hr_df %>%
+  select(all_of(top_outliers)) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "name",
+    values_to = "value"
+  ) %>%
+  filter(!is.na(value)) %>%
+  mutate(
+    name = wrap_label(clean_label(name), 20)
+  )
+
+p <- ggplot(
+  likert_long,
+  aes(x = value, y = reorder(name, value))
+) +
+  geom_boxplot(
+    fill = "#D9EAF4",
+    color = "#1D3557",
+    alpha = 0.75,
+    width = 0.55,
+    outlier.alpha = 0.25
+  ) +
+  geom_jitter(
+    aes(color = value),
+    width = 0.12,
+    alpha = 0.25,
+    size = 0.9
+  ) +
+  scale_color_viridis_c(option = "C", end = 0.9) +
+  theme_hr(10) +
+  theme(
+    axis.text.y = element_text(size = 8),
+    legend.position = "none",
+    plot.margin = margin(10, 15, 10, 10)
+  ) +
+  labs(
+    title = "Likert Variable Outlier Structure",
+    subtitle = "Distribution spread across high-variance workforce perception variables",
+    x = "Response Level",
+    y = NULL
+  )
+
+print(p)
+
+save_plot(p, "likert_outliers.png", width = 8, height = 4.8)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Outlier patterns are present but remain within expected bounds for Likert-scale data, indicating natural variation rather than data quality issues.
+</p>
+
+<p>
+Higher response levels (e.g., 5–7) show wider dispersion across several variables, suggesting that stronger employee perceptions are more variable than lower-level responses.
+</p>
+
+<p>
+These patterns support the use of modeling approaches that can accommodate variability without requiring aggressive outlier treatment.
+</p>
+
+</div>
+```
+
+# Workforce Relationship Analysis {#correlation-analysis}
+
+This section evaluates how numeric workforce variables relate to one another and whether those relationships suggest meaningful behavioral structure or problematic redundancy.
+
+The analysis focuses on two complementary views:
+
+- The **correlation matrix**, which summarizes overall pairwise relationships across numeric predictors  
+- The **pairwise plot**, which shows shape, spread, and visible patterns for selected high-variance variables  
+
+Together, these views help determine whether the dataset contains realistic clusters of related constructs while remaining stable enough for predictive modeling.
+
+## Top Numeric Correlation Pairs
+
+The original correlation matrix is useful as a diagnostic, but a full matrix becomes difficult to read when the dataset includes many workforce variables. For the main report, the more useful view is a ranked list of the strongest numeric relationships.
+
+This plot removes the diagonal self-correlations and highlights the strongest non-duplicate numeric relationships. This makes the relationship structure easier to interpret without overstating weak associations.
+
+```{r 05-correlation-plot, echo=FALSE}
+hr_df <- base_df
+
+numeric_data <- safe_numeric(hr_df)
+
+corr_matrix <- cor(
+  numeric_data,
+  use = "complete.obs"
+)
+
+corr_df <- as.data.frame(as.table(corr_matrix)) %>%
+  dplyr::rename(
+    Var1 = Var1,
+    Var2 = Var2,
+    Correlation = Freq
+  ) %>%
+  dplyr::filter(as.character(Var1) < as.character(Var2)) %>%
+  dplyr::mutate(
+    Abs_Correlation = abs(Correlation),
+    Direction = dplyr::case_when(
+      Correlation >= 0 ~ "Positive",
+      TRUE ~ "Negative"
+    ),
+    Relationship = paste0(
+      clean_label(as.character(Var1)),
+      " ↔ ",
+      clean_label(as.character(Var2))
+    )
+  ) %>%
+  dplyr::arrange(dplyr::desc(Abs_Correlation)) %>%
+  dplyr::slice_head(n = 10) %>%
+  dplyr::mutate(
+    Relationship = stringr::str_wrap(Relationship, width = 32),
+    Relationship = forcats::fct_reorder(Relationship, Abs_Correlation),
+    Label = scales::number(Correlation, accuracy = 0.001)
+  )
+
+p <- ggplot(
+  corr_df,
+  aes(
+    x = Abs_Correlation,
+    y = Relationship,
+    fill = Direction
+  )
+) +
+  geom_col(
+    width = 0.68,
+    alpha = 0.95
+  ) +
+  geom_text(
+    aes(label = Label),
+    hjust = -0.10,
+    size = 3.2,
+    fontface = "bold",
+    color = "#243447"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Positive" = "#2A9D8F",
+      "Negative" = "#E76F51"
+    )
+  ) +
+  scale_x_continuous(
+    labels = scales::number_format(accuracy = 0.1),
+    limits = c(0, max(corr_df$Abs_Correlation, na.rm = TRUE) + 0.10),
+    breaks = seq(0, 0.8, by = 0.1),
+    expand = expansion(mult = c(0, 0.02))
+  ) +
+  labs(
+    title = "Strongest Numeric Relationships",
+    subtitle = "Top non-duplicate correlations after removing self-correlations",
+    x = "Absolute correlation strength",
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_hr(11) +
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      size = 16,
+      hjust = 0
+    ),
+    plot.subtitle = element_text(
+      color = "#5A6B7C",
+      size = 11,
+      hjust = 0
+    ),
+    plot.title.position = "plot",
+    axis.text.y = element_text(
+      size = 8.3,
+      face = "bold",
+      color = "#243447",
+      lineheight = 0.98
+    ),
+    axis.text.x = element_text(size = 9.5),
+    axis.title.x = element_text(size = 10.5),
+    legend.position = "top",
+    legend.justification = "left",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(12, 48, 12, 10)
+  ) +
+  coord_cartesian(clip = "off")
+
+print(p)
+
+save_plot(
+  p,
+  "correlation_plot.png",
+  width = 10.5,
+  height = 5.9
+)
+```
+
+### Interpreting Correlation Strength
+
+Correlation coefficients describe the direction and magnitude of pairwise linear relationships. In workforce analytics, even modest correlations can be meaningful because employee outcomes are rarely driven by a single factor.
+
+A practical interpretation framework for this analysis is:
+
+- |r| ≈ 0.10 → weak but potentially meaningful relationship  
+- |r| ≈ 0.15–0.20 → small but consistent association  
+- |r| ≈ 0.25–0.35 → moderate relationship  
+- |r| ≥ 0.50 → comparatively strong relationship and possible redundancy concern  
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+The strongest numeric relationship is between <b>salary and tenure</b>, which reflects an expected workforce progression pattern rather than a data quality issue.
+</p>
+
+<p>
+Most other relationships remain weak to moderate, suggesting that the dataset contains useful signal without being dominated by excessive linear redundancy.
+</p>
+
+<p>
+This supports the use of predictive modeling because the feature space includes multiple workforce dimensions instead of a small set of overpowering predictors.
+</p>
+
+<p>
+The correlation results also reinforce the need for later model evaluation: workforce outcomes are shaped by interacting patterns across compensation, tenure, wellbeing, engagement, monitoring, and privacy-related variables.
+</p>
+
+</div>
+```
+
+## Relationship Spotlight
+
+Instead of displaying every pairwise relationship at once, this section focuses on a smaller set of workforce relationships that are easier to interpret visually.
+
+These examples were selected because they represent different types of workforce signal: compensation progression, workload strain, wellbeing, and monitoring/privacy perception.
+
+```{r 06-pairwise-relationship-spotlight, echo=FALSE}
+library(patchwork)
+
+hr_df <- base_df
+
+# -------------------------------------------------------------------
+# Relationship Spotlight Across Workforce Signals
+# Uses cleaned snake_case variable names from hr_dataset_clean.rds
+# -------------------------------------------------------------------
+
+required_relationship_vars <- c(
+  "burnout_score",
+  "wellbeing_score",
+  "perceived_intrusiveness",
+  "privacy_concern_score",
+  "overtime_hours",
+  "absenteeism_due_to_mental_health",
+  "tenure_years",
+  "average_salary"
+)
+
+missing_relationship_vars <- setdiff(required_relationship_vars, names(hr_df))
+
+if (length(missing_relationship_vars) > 0) {
+  stop(
+    "Missing variable(s) for relationship spotlight: ",
+    paste(missing_relationship_vars, collapse = ", ")
+  )
+}
+
+# ---- Correlation summaries ----
+corr_bw <- cor(
+  hr_df$burnout_score,
+  hr_df$wellbeing_score,
+  use = "complete.obs"
+)
+
+corr_mp <- cor(
+  hr_df$perceived_intrusiveness,
+  hr_df$privacy_concern_score,
+  use = "complete.obs"
+)
+
+corr_om <- cor(
+  hr_df$overtime_hours,
+  hr_df$absenteeism_due_to_mental_health,
+  use = "complete.obs"
+)
+
+corr_ts <- cor(
+  hr_df$tenure_years,
+  hr_df$average_salary,
+  use = "complete.obs"
+)
+
+# ---- Plot 1: Burnout vs Wellbeing ----
+p1 <- ggplot(
+  hr_df,
+  aes(
+    x = burnout_score,
+    y = wellbeing_score
+  )
+) +
+  geom_count(
+    color = "#2A9D8F",
+    fill = "#7BD6C7",
+    alpha = 0.82,
+    stroke = 0.35
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    color = "#1D3557",
+    fill = "#A8DADC",
+    linewidth = 1.15,
+    alpha = 0.18
+  ) +
+  annotate(
+    "label",
+    x = 1.15,
+    y = 6.8,
+    label = paste0(
+      "Wellbeing balance\n",
+      "r = ",
+      scales::number(corr_bw, accuracy = 0.001)
+    ),
+    hjust = 0,
+    vjust = 1,
+    size = 3.6,
+    label.size = 0.25,
+    fill = "white",
+    color = "#243447",
+    fontface = "bold"
+  ) +
+  scale_x_continuous(
+    breaks = 1:7,
+    limits = c(0.7, 7.3)
+  ) +
+  scale_y_continuous(
+    breaks = 1:7,
+    limits = c(0.7, 7.3)
+  ) +
+  scale_size_area(
+    max_size = 13,
+    guide = "none"
+  ) +
+  labs(
+    title = "Burnout vs Wellbeing",
+    x = "Burnout Score",
+    y = "Wellbeing Score"
+  ) +
+  theme_hr(10) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 8.5),
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  )
+
+# ---- Plot 2: Monitoring Intrusiveness vs Privacy Concern ----
+p2 <- ggplot(
+  hr_df,
+  aes(
+    x = perceived_intrusiveness,
+    y = privacy_concern_score
+  )
+) +
+  geom_count(
+    color = "#2A9D8F",
+    fill = "#7BD6C7",
+    alpha = 0.82,
+    stroke = 0.35
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    color = "#1D3557",
+    fill = "#A8DADC",
+    linewidth = 1.15,
+    alpha = 0.18
+  ) +
+  annotate(
+    "label",
+    x = 1.15,
+    y = 4.9,
+    label = paste0(
+      "Privacy and monitoring\n",
+      "r = ",
+      scales::number(corr_mp, accuracy = 0.001)
+    ),
+    hjust = 0,
+    vjust = 1,
+    size = 3.6,
+    label.size = 0.25,
+    fill = "white",
+    color = "#243447",
+    fontface = "bold"
+  ) +
+  scale_x_continuous(
+    breaks = 1:5,
+    limits = c(0.7, 5.3)
+  ) +
+  scale_y_continuous(
+    breaks = 1:5,
+    limits = c(0.7, 5.3)
+  ) +
+  scale_size_area(
+    max_size = 13,
+    guide = "none"
+  ) +
+  labs(
+    title = "Monitoring Intrusiveness vs Privacy Concern",
+    x = "Perceived Intrusiveness",
+    y = "Privacy Concern Score"
+  ) +
+  theme_hr(10) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 8.5),
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  )
+
+# ---- Plot 3: Overtime vs Mental Health Absence ----
+p3 <- ggplot(
+  hr_df,
+  aes(
+    x = overtime_hours,
+    y = absenteeism_due_to_mental_health
+  )
+) +
+  geom_bin2d(
+    bins = 24,
+    alpha = 0.92
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    color = "#1D3557",
+    fill = "#A8DADC",
+    linewidth = 1.15,
+    alpha = 0.18
+  ) +
+  annotate(
+    "label",
+    x = 8,
+    y = 9.5,
+    label = paste0(
+      "Workload strain\n",
+      "r = ",
+      scales::number(corr_om, accuracy = 0.001)
+    ),
+    hjust = 0,
+    vjust = 1,
+    size = 3.6,
+    label.size = 0.25,
+    fill = "white",
+    color = "#243447",
+    fontface = "bold"
+  ) +
+  scale_fill_gradient(
+    low = "#D9F3EE",
+    high = "#2A9D8F",
+    name = "Count"
+  ) +
+  labs(
+    title = "Overtime vs Mental Health Absence",
+    x = "Overtime Hours",
+    y = "Mental Health Absence"
+  ) +
+  theme_hr(10) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 8.5),
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  )
+
+# ---- Plot 4: Tenure vs Salary ----
+p4 <- ggplot(
+  hr_df,
+  aes(
+    x = tenure_years,
+    y = average_salary
+  )
+) +
+  geom_bin2d(
+    bins = 24,
+    alpha = 0.92
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = TRUE,
+    color = "#1D3557",
+    fill = "#A8DADC",
+    linewidth = 1.15,
+    alpha = 0.18
+  ) +
+  annotate(
+    "label",
+    x = 0.8,
+    y = 245000,
+    label = paste0(
+      "Compensation progression\n",
+      "r = ",
+      scales::number(corr_ts, accuracy = 0.001)
+    ),
+    hjust = 0,
+    vjust = 1,
+    size = 3.6,
+    label.size = 0.25,
+    fill = "white",
+    color = "#243447",
+    fontface = "bold"
+  ) +
+  scale_fill_gradient(
+    low = "#D9F3EE",
+    high = "#2A9D8F",
+    name = "Count"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_dollar()
+  ) +
+  labs(
+    title = "Tenure vs Salary",
+    x = "Tenure Years",
+    y = "Average Salary"
+  ) +
+  theme_hr(10) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 8.5),
+    legend.position = "none",
+    panel.grid.minor = element_blank()
+  )
+
+p <- (p1 + p2) / (p3 + p4) +
+  patchwork::plot_annotation(
+    title = "Relationship Spotlight Across Workforce Signals",
+    subtitle = "Selected relationships used to assess compensation, workload, wellbeing, and monitoring patterns",
+    theme = theme(
+      plot.title = element_text(face = "bold", size = 18, hjust = 0),
+      plot.subtitle = element_text(size = 12, color = "#5A6B7C", hjust = 0)
+    )
+  )
+
+print(p)
+
+save_plot(
+  p,
+  "pairwise_plot.png",
+  width = 12,
+  height = 8.8
+)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+The relationship spotlight shows that only a few numeric relationships have clear linear structure. Salary and tenure show the clearest expected progression pattern, while workload, wellbeing, and monitoring-related relationships are more diffuse.
+</p>
+
+<p>
+This supports the modeling strategy used later in the project: workforce outcomes are not explained by one dominant predictor. Instead, useful prediction depends on combining multiple weak-to-moderate signals across employee experience, wellbeing, workload, and monitoring-related variables.
+</p>
+
+</div>
+```
+
+### Correlation Insights
+
+The correlation results suggest that the dataset contains meaningful structure, but not excessive redundancy.
+
+At higher thresholds, only a small number of relationships remain prominent, most notably the positive association between salary and tenure. This is consistent with expected workforce dynamics in which longer-tenured employees tend to earn more over time.
+
+At more moderate thresholds, additional clustering appears among mental health and well-being measures, including stress, anxiety, depression, and absenteeism-related variables. These relationships suggest that the dataset captures coherent psychological and behavioral dimensions rather than isolated indicators.
+
+Smaller but still interpretable relationships also emerge among monitoring and privacy-related variables, reinforcing the idea that these constructs contribute signal while remaining secondary to broader engagement and well-being patterns.
+
+Taken together, the correlation structure reflects a realistic workforce system in which outcomes are shaped by several interacting dimensions rather than a handful of overpowering predictors.
+
+# Target Variable Exploration {#target-analysis}
+
+This section examines the distribution of the three main workforce outcomes used in later modeling:
+
+- Turnover intention  
+- Quiet quitting  
+- Monitoring-related turnover risk  
+
+The goal is to understand baseline prevalence, identify imbalance patterns, and assess whether the outcomes are sufficiently represented for reliable classification analysis.
+
+These diagnostics help determine whether later model evaluation should emphasize metrics such as recall, F1 score, or specificity in addition to overall accuracy.
+
+## Target Variable Distributions
+
+The following plots summarize the distribution of the three primary categorical outcomes in the dataset.
+
+Examining these distributions before modeling is important because outcome imbalance can influence how models learn patterns and how performance should be interpreted.
+
+```{r 06-target-variable-distributions, echo=FALSE}
+hr_df <- base_df
+
+df_long <- base_df %>%
+  select(monitoring_turnover_risk, quiet_quitting, turnover_intention) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  mutate(
+    variable = clean_label(variable),
+    value = clean_label(value)
+  )
+
+p <- ggplot(df_long, aes(x = value, fill = value)) +
+  geom_bar() +
+  facet_wrap(~variable, scales = "free_y") +
+  scale_fill_manual(values = c(
+    "No" = hr_palette$primary,
+    "Yes" = hr_palette$danger
+  )) +
+  theme_hr(10) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 11)
+  ) +
+  labs(
+    title = "Target Variable Distributions",
+    x = NULL,
+    y = "Count"
+  )
+
+print(p)
+save_plot(p, "target_distributions.png", 8.5, 5.5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Target variables show generally balanced distributions, particularly for turnover intention, supporting reliable classification modeling.
+</p>
+
+<p>
+However, mild imbalance is present in outcomes such as quiet quitting and monitoring-related turnover risk, where "No" responses are more prevalent.
+</p>
+
+<p>
+While not severe, these patterns suggest that evaluation metrics beyond accuracy (e.g., recall and F1-score) will be important during model assessment.
+</p>
+
+</div>
+```
+
+## Target Versus Predictor Relationships
+
+Before modeling, it is useful to examine whether key predictors show visible separation across outcome groups.
+
+These density-based comparisons do not establish causality, but they do help identify variables that appear to shift meaningfully between employees with different workforce outcomes. This provides an early view of which behavioral and perceptual measures may be most informative for prediction.
+
+### Turnover Intention vs Key Predictors
+
+```{r 06-turnover-vs-predictors, echo=FALSE}
+hr_df <- base_df
+
+key_vars <- c(
+  "job_satisfaction",
+  "burnout_score",
+  "engagement_level",
+  "work_life_balance_satisfaction",
+  "organizational_commitment"
+)
+
+df_long <- hr_df %>%
+  select(all_of(key_vars), turnover_intention) %>%
+  pivot_longer(
+    cols = -turnover_intention,
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  mutate(
+    variable = clean_label(variable),
+    turnover_intention = clean_label(turnover_intention)
+  )
+
+p <- ggplot(df_long, aes(x = value, fill = turnover_intention)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~variable, scales = "free") +
+  scale_fill_manual(values = c(
+    "No" = hr_palette$primary,
+    "Yes" = hr_palette$danger
+  )) +
+  theme_hr(10) +
+  labs(
+    title = "Key Predictors vs Turnover Intention",
+    x = NULL,
+    y = "Density",
+    fill = "Turnover"
+  )
+
+print(p)
+save_plot(p, "turnover_predictor_relationships.png", 10, 6.5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Employees with higher burnout and lower job satisfaction show a clear shift toward higher turnover intention, indicating strong behavioral separation between outcome groups.
+</p>
+
+<p>
+Engagement, work-life balance, and organizational commitment demonstrate consistent distributional differences, reinforcing their importance as key predictors of attrition risk.
+</p>
+
+<p>
+These patterns suggest that turnover intention is strongly associated with both emotional strain and reduced organizational attachment.
+</p>
+
+</div>
+```
+
+## Quiet Quitting Versus Key Predictors
+
+```{r 06-quiet-vs-predictors, echo=FALSE}
+hr_df <- base_df
+
+key_vars <- c(
+  "discretionary_effort",
+  "engagement_level",
+  "job_involvement",
+  "recognition_score",
+  "feeling_valued_at_work"
+)
+
+df_long <- hr_df %>%
+  select(all_of(key_vars), quiet_quitting) %>%
+  pivot_longer(
+    cols = -quiet_quitting,
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  mutate(
+    variable = clean_label(variable),
+    quiet_quitting = clean_label(quiet_quitting)
+  )
+
+p <- ggplot(df_long, aes(x = value, fill = quiet_quitting)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~variable, scales = "free") +
+  scale_fill_manual(values = c(
+    "No" = hr_palette$primary,
+    "Yes" = hr_palette$danger
+  )) +
+  theme_hr(10) +
+  labs(
+    title = "Key Predictors vs Quiet Quitting",
+    x = NULL,
+    y = "Density",
+    fill = "Quiet Quitting"
+  )
+
+print(p)
+save_plot(p, "quiet_quitting_predictor_relationships.png", 10, 6.5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Quiet quitting is strongly associated with reduced discretionary effort, lower engagement, and weaker perceptions of recognition and value.
+</p>
+
+<p>
+These variables capture behavioral disengagement rather than formal attrition, making them critical indicators for early intervention.
+</p>
+
+</div>
+```
+
+## Monitoring Risk Versus Key Predictors
+
+```{r 06-monitoring-vs-predictors, echo=FALSE}
+hr_df <- base_df
+
+key_vars <- c(
+  "monitoring_intrusiveness",
+  "monitoring_productivity_impact",
+  "monitoring_satisfaction_impact",
+  "privacy_concern_score",
+  "trust_in_monitoring"
+)
+
+df_long <- base_df %>%
+  select(all_of(key_vars), monitoring_turnover_risk) %>%
+  pivot_longer(
+    cols = -monitoring_turnover_risk,
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  mutate(
+    variable = clean_label(variable),
+    monitoring_turnover_risk = clean_label(monitoring_turnover_risk)
+  )
+
+p <- ggplot(df_long, aes(x = value, fill = monitoring_turnover_risk)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~variable, scales = "free") +
+  scale_fill_manual(values = c(
+    "No" = "#A8DADC",
+    "Yes" = "#E63946"
+  )) +
+  theme_hr(10) +
+  theme(
+    strip.text = element_text(size = 10)
+  ) +
+  labs(
+    title = "Key Predictors vs Monitoring-Based Turnover Risk",
+    x = NULL,
+    y = "Density",
+    fill = "Risk"
+  )
+
+print(p)
+save_plot(p, "monitoring_risk_predictors.png", 8.5, 5.5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Monitoring and privacy-related variables reveal clear behavioral differentiation across employees, particularly in how monitoring is perceived and its impact on satisfaction and productivity.
+</p>
+
+<p>
+Higher levels of <b>perceived intrusiveness</b> and <b>privacy concern</b> tend to align with lower satisfaction-related distributions, suggesting that monitoring practices may negatively influence employee sentiment when perceived as excessive or invasive.
+</p>
+
+<p>
+Conversely, measures such as <b>trust in monitoring</b> and <b>perceived productivity impact</b> display more balanced distributions, indicating that monitoring effects are not universally negative and may depend on implementation and communication.
+</p>
+
+<p>
+These patterns highlight monitoring as a nuanced organizational factor that can either support or undermine workforce engagement depending on how it is experienced by employees.
+</p>
+
+</div>
+```
+
+### Turnover Intention by Department
+
+Department-level turnover rates help identify whether turnover intention is evenly distributed across the organization or concentrated within specific functional areas.
+
+This view adds practical segmentation to the EDA by showing how turnover risk may differ across organizational contexts rather than only across individual-level predictors.
+
+```{r 06-turnover-by-department, echo=FALSE}
+hr_df <- base_df
+
+df <- hr_df %>%
+  filter(!is.na(turnover_intention), !is.na(department)) %>%
+  mutate(
+    department = clean_label(department),
+    turnover_yes = as.numeric(turnover_intention == "Yes")
+  ) %>%
+  group_by(department) %>%
+  summarise(turnover_rate = mean(turnover_yes), .groups = "drop") %>%
+  arrange(desc(turnover_rate))
+
+p <- ggplot(df, aes(x = turnover_rate, y = reorder(department, turnover_rate), fill = turnover_rate)) +
+  geom_col() +
+  scale_fill_gradient(
+    low = hr_palette$primary,
+    high = hr_palette$danger,
+    name = "Turnover Rate"
+  ) +
+  theme_hr(10) +
+  labs(
+    title = "Turnover Intention by Department",
+    x = "Turnover Rate",
+    y = NULL
+  )
+
+print(p)
+save_plot(p, "turnover_by_department.png", 10, 6.5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<ul>
+  <li><b>Support and QA departments</b> show the highest turnover intention rates (~60%).</li>
+  
+  <li><b>Management, Web, and Applications</b> fall into a mid-tier range (~55–57%).</li>
+  
+  <li><b>Infrastructure and Security</b> demonstrate the lowest turnover intention (~50–52%).</li>
+</ul>
+
+<ul>
+  <li>Operational and repetitive roles appear more vulnerable to disengagement.</li>
+  <li>Specialized technical roles show relatively stronger retention patterns.</li>
+</ul>
+
+<b>Key Insight:</b> Department is a meaningful segmentation variable, with operational roles exhibiting elevated turnover risk compared to more specialized or technical functions.
+
+</div>
+```
+
+# Model Stability Diagnostics {#vif-section}
+
+Variance Inflation Factor (VIF) analysis is used to assess whether predictors contain overlapping linear signal that could reduce model stability or interpretability.
+
+The diagnostics are separated into:
+
+- Numeric predictors  
+- Categorical predictors after dummy encoding  
+
+This allows the analysis to distinguish between continuous overlap and redundancy introduced through categorical expansion.
+
+## VIF for Numeric Predictors
+
+This diagnostic evaluates whether numeric predictors contribute largely independent information or whether some variables are redundant enough to inflate variance in model estimation.
+
+Given the modest correlation structure observed earlier, the expectation is that numeric multicollinearity will remain limited.
+
+```{r 07-vif-numeric, echo=FALSE}
+library(car)
+
+hr_df <- base_df
+
+numeric_data <- safe_numeric(hr_df)
+
+numeric_data$.__dummy__ <- rnorm(nrow(numeric_data))
+
+vif_model <- lm(.__dummy__ ~ ., data = numeric_data)
+
+aliased <- is.na(coef(vif_model))
+
+if (any(aliased)) {
+  numeric_data <- numeric_data[, !names(numeric_data) %in% names(coef(vif_model))[aliased]]
+  vif_model <- lm(.__dummy__ ~ ., data = numeric_data)
+}
+
+vif_values <- car::vif(vif_model)
+
+vif_df <- tibble(
+  Variable = names(vif_values),
+  VIF = as.numeric(vif_values)
+) %>%
+  mutate(Variable = gsub("`|'", "", Variable)) %>%
+  arrange(desc(VIF))
+
+vif_df <- vif_df %>%
+  mutate(Variable = clean_label(Variable))
+
+p <- ggplot(vif_df, aes(x = VIF, y = reorder(Variable, VIF), fill = VIF)) +
+  geom_col() +
+  scale_fill_gradient(low = "#A8DADC", high = "#1D3557") +
+  geom_vline(xintercept = 5, linetype = "dashed", color = "#E63946") +
+  theme_hr(10) +
+  theme(
+    axis.text.y = element_text(size = 7),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "Variance Inflation Factor (Numeric Predictors)",
+    x = "Variance Inflation Factor",
+    y = NULL
+  )
+
+print(p)
+save_plot(p, "vif_numeric.png", 9, 6)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Most numeric predictors fall within acceptable VIF thresholds, indicating limited multicollinearity concerns.
+</p>
+
+<p>
+A small number of variables show moderate inflation, which may reflect overlapping constructs rather than true redundancy. These variables should be monitored but do not currently require removal.
+</p>
+
+</div>
+```
+
+## VIF for Categorical Predictors
+
+Categorical multicollinearity is assessed after dummy encoding factor variables into indicator columns.
+
+This step is especially important because redundancy can arise not only from conceptual overlap between variables, but also from the way multiple levels of the same categorical construct are represented.
+
+```{r 07-vif-categorical, echo=FALSE}
+library(car)
+library(fastDummies)
+
+hr_df <- base_df
+
+cat_df <- safe_dummies(hr_df)
+
+cat_df$.__dummy__ <- rnorm(nrow(cat_df))
+
+vif_model <- lm(.__dummy__ ~ ., data = cat_df)
+
+aliased <- is.na(coef(vif_model))
+
+if (any(aliased)) {
+  cat_df <- cat_df[, !names(cat_df) %in% names(coef(vif_model))[aliased]]
+  vif_model <- lm(.__dummy__ ~ ., data = cat_df)
+}
+
+vif_values <- car::vif(vif_model)
+
+vif_df <- tibble(
+  Variable = names(vif_values),
+  VIF = as.numeric(vif_values)
+) %>%
+  mutate(Variable = gsub("`|'", "", Variable))
+
+vif_df <- vif_df %>%
+  mutate(Variable = clean_label(Variable))
+
+p <- ggplot(vif_df, aes(x = VIF, y = reorder(Variable, VIF), fill = VIF)) +
+  geom_col() +
+  scale_fill_gradient(low = "#A8DADC", high = "#1D3557") +
+  geom_vline(xintercept = 5, linetype = "dashed", color = "#E63946") +
+  theme_hr(10) +
+  theme(
+    axis.text.y = element_text(size = 7),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "Variance Inflation Factor (Categorical Predictors)",
+    x = "Variance Inflation Factor",
+    y = NULL
+  )
+
+print(p)
+save_plot(p, "vif_categorical.png", 9, 6)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+The initial categorical VIF check identified redundancy introduced by detailed categorical encoding, especially around age-group levels.
+</p>
+
+<p>
+Rather than treating this as a data failure, the analysis uses it as a feature-engineering checkpoint. The age variable is collapsed into broader career-stage categories to reduce unnecessary redundancy while preserving workforce interpretation.
+</p>
+
+<p>
+The updated VIF check below is the more important diagnostic because it reflects the refined categorical feature structure used to support downstream modeling.
+</p>
+
+</div>
+```
+
+## Addressing Age Group Multicollinearity
+
+The categorical VIF results indicate that the original age-group encoding introduces unnecessary redundancy across several dummy variables.
+
+This is expected when multiple mutually exclusive levels of a single ordered construct are encoded in detail. To reduce that redundancy while preserving analytical meaning, the original age groups are collapsed into broader career-stage categories:
+
+- Early-Career  
+- Mid-Career  
+- Senior-Career  
+
+This simplifies the age structure, improves model stability, and retains the substantive workforce interpretation of age-related differences.
+
+```{r 07-update-age-groups, fig.show="hold", echo=FALSE}
+hr_df <- base_df
+
+hr_df <- hr_df %>%
+  mutate(
+    age_group = case_when(
+      age_group %in% c("16-19", "20-24", "25-34") ~ "Early-Career",
+      age_group %in% c("35-44", "45-54") ~ "Mid-Career",
+      age_group %in% c("55-64", "65+") ~ "Senior-Career",
+      TRUE ~ as.character(age_group)
+    ),
+    age_group = factor(
+      age_group,
+      levels = c("Early-Career", "Mid-Career", "Senior-Career")
+    )
+  )
+```
+
+## Updated Categorical VIF Check
+
+After collapsing age into broader career stages, categorical multicollinearity is recalculated to verify that the feature space is more stable and less redundant.
+
+This second check confirms whether the adjustment resolves the earlier inflation without removing the workforce signal contributed by age-related structure.
+
+```{r 07-vif-categorical-updated, echo=FALSE}
+library(car)
+library(fastDummies)
+
+hr_df <- base_df
+
+hr_df <- hr_df %>%
+  mutate(
+    age_group = case_when(
+      age_group %in% c("16-19", "20-24", "25-34") ~ "Early-Career",
+      age_group %in% c("35-44", "45-54") ~ "Mid-Career",
+      age_group %in% c("55-64", "65+") ~ "Senior-Career",
+      TRUE ~ as.character(age_group)
+    ),
+    age_group = factor(
+      age_group,
+      levels = c("Early-Career", "Mid-Career", "Senior-Career")
+    )
+  )
+
+cat_df <- safe_dummies(hr_df)
+
+cat_df$.__dummy__ <- rnorm(nrow(cat_df))
+
+vif_model <- lm(.__dummy__ ~ ., data = cat_df)
+
+aliased <- is.na(coef(vif_model))
+
+if (any(aliased)) {
+  cat_df <- cat_df[, !names(cat_df) %in% names(coef(vif_model))[aliased]]
+  vif_model <- lm(.__dummy__ ~ ., data = cat_df)
+}
+
+vif_values <- car::vif(vif_model)
+
+vif_df <- tibble(
+  Variable = names(vif_values),
+  VIF = as.numeric(vif_values)
+) %>%
+  mutate(Variable = gsub("`|'", "", Variable)) %>%
+  arrange(VIF)
+
+vif_df <- vif_df %>%
+  mutate(Variable = clean_label(Variable))
+
+p <- ggplot(vif_df, aes(x = VIF, y = reorder(Variable, VIF), fill = VIF)) +
+  geom_col() +
+  scale_fill_gradient(low = "#A8DADC", high = "#1D3557") +
+  geom_vline(xintercept = 5, linetype = "dashed", color = "#E63946") +
+  theme_hr(10) +
+  theme(
+    axis.text.y = element_text(size = 7),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "Updated VIF – Categorical Predictors",
+    x = "Variance Inflation Factor",
+    y = NULL
+  )
+
+
+print(p)
+save_plot(p, "vif_categorical_updated.png", 9, 6)
+```
+
+# Distribution & Risk Imbalance Analysis {#imbalance-section}
+
+This section evaluates imbalance and asymmetry across both numeric and categorical variables.
+
+The focus is on:
+
+- Identifying skewed numeric distributions  
+- Detecting dominant categories in workforce composition  
+- Assessing whether these patterns may influence model behavior  
+
+These diagnostics help anticipate where transformations, resampling, or algorithm choice may matter during predictive modeling.
+
+## Numeric Variable Skewness
+
+```{r 08-skewness-plot, echo=FALSE}
+hr_df <- base_df
+
+numeric_df <- safe_numeric(hr_df)
+
+skew_df <- numeric_df %>%
+  summarise(across(everything(), ~ e1071::skewness(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Skewness") %>%
+  mutate(Variable = clean_label(Variable))
+
+p <- ggplot(skew_df, aes(x = Skewness, y = reorder(Variable, Skewness), fill = Skewness)) +
+  geom_col() +
+  scale_fill_gradient2(
+    low = "#D7263D",
+    mid = "white",
+    high = "#2A9D8F",
+    midpoint = 0
+  ) +
+  theme_hr(10) +
+  theme(axis.text.y = element_text(size = 7)) +
+  labs(
+    title = "Skewness of Numeric Variables",
+    x = "Skewness",
+    y = NULL
+  )
+
+print(p)
+save_plot(p, "skewness.png", 9, 6)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Several behavioral workforce variables (e.g., overtime hours, absenteeism, and mental health days taken) exhibit right-skewed distributions, indicating that extreme outcomes are concentrated among a smaller subset of employees.
+</p>
+
+<p>
+This pattern reflects realistic organizational dynamics, where most employees operate within typical ranges while a smaller group experiences elevated workload, stress, or disengagement.
+</p>
+
+<p>
+From a modeling perspective, these distributions may benefit from transformation or robust modeling approaches, particularly when using regression-based techniques.
+</p>
+
+</div>
+```
+
+### Dominant Category Proportion
+
+```{r 08-dominant-category-core, echo=FALSE}
+core_vars <- c(
+  "department",
+  "work_arrangement",
+  "seniority",
+  "gender",
+  "age_group"
+)
+
+plots_core <- lapply(core_vars, function(v) {
+  plot_cat(v, base_df) +
+    theme(
+      plot.title = element_text(size = 10),
+      axis.text.y = element_text(size = 7)
+    )
+})
+
+p <- patchwork::wrap_plots(
+  plots_core,
+  ncol = 2
+)
+
+print(p)
+save_plot(p, "dominant_categories_core.png", 8.5, 5.5)
+```
+
+```{r 08-dominant-category-behavior, echo=FALSE}
+behavior_vars <- c(
+  "race",
+  "ethnicity",
+  "access_to_counseling",
+  "leadership_style",
+  "time_tracking_method_used",
+  "surveillance_method_used"
+)
+
+plots_behavior <- lapply(behavior_vars, function(v) {
+
+  plot_cat(v, base_df) +
+    theme(
+      plot.title = element_text(size = 9),
+      axis.text.y = element_text(size = 6.5),
+      axis.text.x = element_text(size = 7)
+    )
+})
+
+p <- patchwork::wrap_plots(
+  plots_behavior,
+  ncol = 2
+)
+
+print(p)
+save_plot(p, "dominant_categories_behavior.png", 8.5, 5.5)
+```
+
+### 📊 Key Takeaways
+
+```{=html}
+<div class="takeaway-box">
+
+<p>
+Several categorical variables exhibit moderate class imbalance, with dominant categories representing a large share of employees. This reflects realistic workforce composition rather than data issues.
+</p>
+
+<p>
+From a modeling perspective, imbalance may affect classification performance, making metrics such as precision, recall, and F1-score more informative than accuracy alone. Techniques such as resampling or class weighting may be considered if imbalance impacts results.
+</p>
+
+</div>
+```
+
+## Key Observations from Exploratory Analysis
+
+The exploratory analysis reveals several consistent patterns in the synthetic workforce dataset:
+
+- Many continuous workforce measures are right-skewed, indicating that extreme experiences such as high overtime, elevated absenteeism, or longer tenure are concentrated among smaller subsets of employees.
+- Likert-style variables show meaningful spread, especially across engagement, satisfaction, and support-related constructs, providing useful behavioral signal.
+- Correlation patterns are generally weak to moderate, which supports model stability while still revealing coherent clusters such as salary-tenure and mental health-related measures.
+- Monitoring and privacy variables show interpretable distributional differences, suggesting that surveillance-related constructs are meaningfully connected to employee sentiment and risk.
+- Categorical imbalance is present in several workforce descriptors, but it reflects plausible organizational composition rather than structural failure in the dataset.
+
+Overall, the EDA supports the view that the dataset is both behaviorally realistic and analytically useful for predictive modeling.
+
+# Diagnostic Summary {#diagnostics}
+
+The exploratory analysis evaluated the dataset from several diagnostic perspectives, including distribution shape, pairwise relationships, multicollinearity, and imbalance.
+
+The summary below highlights the main findings and their implications for the modeling phase.
+
+```{r 09-diagnostic-summary-table-elite, echo=FALSE}
+library(gt)
+library(dplyr)
+
+diagnostic_summary <- tibble::tibble(
+  Diagnostic = c(
+    "Correlation Structure",
+    "Numeric Multicollinearity",
+    "Categorical Multicollinearity",
+    "Numeric Distribution Shape",
+    "Categorical Class Balance"
+  ),
+  Key_Findings = c(
+    "Most predictors display weak pairwise relationships; strongest signal observed between salary and tenure.",
+    "Variance Inflation Factors remain below critical thresholds, indicating minimal redundancy among numeric predictors.",
+    "Initial categorical encoding introduced redundancy, requiring feature refinement.",
+    "Behavioral variables (e.g., overtime, absenteeism) exhibit right-skewed distributions.",
+    "Certain categorical features display dominant class imbalance."
+  ),
+  Modeling_Implications = c(
+    "Low correlation enhances model stability and reduces overfitting risk.",
+    "Numeric features can be confidently retained without dimensionality reduction.",
+    "Refined encoding improves model robustness and interpretability.",
+    "Tree-based models are well-suited to handle skewed feature distributions.",
+    "Evaluation strategy should prioritize imbalance-aware metrics (Recall, F1 Score)."
+  )
+)
+
+p <- diagnostic_summary %>%
+  gt() %>%
+  
+  # HEADER
+  tab_header(
+    title = md("**Summary of Exploratory Diagnostics**"),
+    subtitle = "Key structural findings and their impact on predictive modeling"
+  ) %>%
+  
+  # COLUMN LABELS
+  cols_label(
+    Diagnostic = "Diagnostic Area",
+    Key_Findings = "Key Findings",
+    Modeling_Implications = "Modeling Implications"
+  ) %>%
+  
+  # No Scroll
+  cols_width(
+    Diagnostic ~ pct(22),
+    Key_Findings ~ pct(39),
+    Modeling_Implications ~ pct(39)
+  ) %>%
+  
+  # TEXT STYLING
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) %>%
+  
+  tab_style(
+    style = cell_text(size = "13px"),
+    locations = cells_body()
+  ) %>%
+  
+  # CLEAN STRIPING
+  opt_row_striping() %>%
+  
+  # SPACING + LAYOUT
+  tab_options(
+    table.width = pct(100),
+    data_row.padding = px(10),
+    table.font.size = px(12.5),
+    heading.title.font.size = px(17),
+    heading.subtitle.font.size = px(12.5)
+  )
+
+p
+```
+
+# Transition to Predictive Modeling {#transition}
+
+The exploratory analysis indicates that the synthetic workforce dataset is suitable for predictive modeling and captures several realistic organizational patterns.
+
+Key continuous variables show meaningful variability, behavioral indicators exhibit plausible skewness, and the overall predictor set remains structurally stable despite a few localized relationships. After minor feature engineering adjustments—most notably the simplification of age-group encoding—the dataset provides a balanced combination of realism, signal, and interpretability.
+
+The next stage establishes a baseline modeling framework before moving into outcome-specific model refinement. This baseline step compares five supervised learning models under a consistent no-sampling condition, creating a reference point for later sampling strategies and final model selection.
+
+The baseline comparison focuses on three workforce outcomes:
+
+- **Turnover Intention**
+- **Quiet Quitting**
+- **Monitoring-Related Turnover Risk**
+
+Because class balance and predictor behavior differ across outcomes, later model evaluation will emphasize not only overall accuracy, but also precision, recall, F1 score, and ROC-AUC where appropriate.
+
+# Strategic Takeaways {#strategic-takeaways}
+
+This exploratory analysis confirms that the synthetic workforce dataset captures realistic behavioral and organizational patterns commonly observed in workforce settings.
+
+Several strategic insights emerge:
+
+- Workforce behavior is not evenly distributed; extreme outcomes such as high overtime, absenteeism, and elevated strain are concentrated within smaller employee segments.
+- Employee perception variables show meaningful variation, providing strong behavioral signal for later predictive modeling.
+- Mental health indicators form a coherent cluster, reinforcing their likely importance in understanding turnover and disengagement risk.
+- Monitoring and privacy-related variables demonstrate measurable relationships with employee sentiment, making them analytically relevant rather than merely contextual.
+- Most variable relationships are moderate rather than strong, which makes the dataset feel more realistic and reduces the risk of over-engineered predictor structure.
+
+From a modeling perspective, the dataset is:
+
+- Structurally stable  
+- Behaviorally realistic  
+- Informative without excessive redundancy  
+
+Taken together, these findings position the dataset well for the next phase of machine learning model development and evaluation.
+
+<hr>
+
+---
+
+# Summary of Key Findings {#eda-summary}
+
+```{r 09-eda-dynamic-summary, echo=FALSE, results='asis'}
+numeric_data <- safe_numeric(base_df)
+
+corr_matrix <- cor(numeric_data, use = "complete.obs")
+
+corr_pairs <- as.data.frame(as.table(corr_matrix)) %>%
+  rename(var1 = Var1, var2 = Var2, corr = Freq) %>%
+  filter(var1 != var2) %>%
+  mutate(pair = purrr::map2_chr(var1, var2, ~ paste(sort(c(.x, .y)), collapse = " | "))) %>%
+  distinct(pair, .keep_all = TRUE) %>%
+  mutate(abs_corr = abs(corr)) %>%
+  arrange(desc(abs_corr))
+
+top_corr <- corr_pairs %>% dplyr::slice(1)
+
+# SAFE VIF
+vif_data <- numeric_data
+vif_data$.__dummy__ <- rnorm(nrow(vif_data))
+
+vif_model <- lm(.__dummy__ ~ ., data = vif_data)
+
+aliased <- is.na(coef(vif_model))
+
+if (any(aliased)) {
+  vif_data <- vif_data[, !names(vif_data) %in% names(coef(vif_model))[aliased], drop = FALSE]
+  vif_model <- lm(.__dummy__ ~ ., data = vif_data)
+}
+
+numeric_vif_max <- max(car::vif(vif_model), na.rm = TRUE)
+
+# Skewness
+skew_df <- numeric_data %>%
+  summarise(across(everything(), ~ e1071::skewness(.x, na.rm = TRUE))) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Skewness") %>%
+  arrange(desc(abs(Skewness)))
+
+top_skew <- skew_df %>% dplyr::slice(1)
+
+summary_html <- glue::glue("
+<div class='takeaway-box'>
+  <p>
+    The exploratory diagnostics indicate that the dataset is structurally suitable for predictive modeling, with limited overall multicollinearity and meaningful behavioral variation across key workforce measures.
+  </p>
+  <ul>
+    <li><strong>Strongest numeric correlation:</strong> {clean_label(top_corr$var1)} and {clean_label(top_corr$var2)} (r = {round(top_corr$corr, 2)})</li>
+    <li><strong>Highest absolute skewness:</strong> {clean_label(top_skew$Variable)} (skew = {round(top_skew$Skewness, 2)})</li>
+    <li><strong>Maximum numeric VIF:</strong> {round(numeric_vif_max, 2)}, indicating acceptable multicollinearity for numeric predictors</li>
+  </ul>
+  <p>
+  Overall, the exploratory analysis confirms that the dataset is suitable for predictive modeling. The target variables show meaningful variation, predictor distributions are usable after preprocessing, and the relationship patterns support a baseline-first modeling strategy before testing outcome-specific sampling approaches.
+</p>
+</div>
+")
+
+cat(summary_html)
+```
+
+```{=html}
+<hr class="section-divider">
+
+<div class="cta-row">
+  <a href="index.html" class="cta-btn btn-blue">← Back Home</a>
+  <a href="hr_data_modeling_baseline.html" class="cta-btn btn-teal">Next: Baseline →</a>
+</div>
+
+    </div> <!-- page-content -->
+  </div> <!-- page-layout -->
+</div> <!-- report-container -->
+```
