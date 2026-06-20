@@ -1,0 +1,44 @@
+# R project files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# R session and cache files
+*.RData
+*.rda
+*.Rhistory
+*.Rapp.history
+
+# RMarkdown / knitr cache
+*_cache/
+*_files/
+cache/
+knitr-cache/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Local environment files
+.env
+.env.local
+
+# Large local-only exports
+*.zip
+*.7z
+*.tar
+*.gz
+
+# Optional: ignore local scratch files
+scratch/
+temp/
